@@ -41,30 +41,28 @@ export default function Marksheet() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
-  // 🚀 DIRECT PDF DOWNLOAD LOGIC
   const handleDownloadPDF = async () => {
     setIsDownloading(true);
-    window.scrollTo(0, 0); // Scroll top taaki PDF cut na ho
+    window.scrollTo(0, 0); 
     
     const element = document.getElementById('marksheet-template');
     if (element) {
       try {
-        // Vercel build error se bachne ke liye dynamic import
         const html2canvas = (await import('html2canvas')).default;
         const { jsPDF } = await import('jspdf');
         
         const canvas = await html2canvas(element, { 
-          scale: 2, // High Quality HD PDF
-          useCORS: true // Images ke liye
+          scale: 2, 
+          useCORS: true 
         });
         
         const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4'); // A4 Size Set kiya
+        const pdf = new jsPDF('p', 'mm', 'a4'); 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
         
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${student.name}_Marksheet.pdf`); // Student ke naam se save hoga
+        pdf.save(`${student.name}_Marksheet.pdf`); 
       } catch (error) {
         console.error("Error generating PDF", error);
         alert("PDF banane me error aayi. Please try again.");
@@ -86,6 +84,24 @@ export default function Marksheet() {
   return (
     <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:block print:py-0 print:bg-white">
       
+      {/* EXTREME 1-PAGE PRINT CSS FIX FOR iOS/SAFARI */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          @page { size: A4 portrait; margin: 0mm !important; }
+          html, body { 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            width: 210mm; 
+            height: 297mm; 
+            overflow: hidden !important; 
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+            background-color: white;
+          }
+          header, footer { display: none !important; }
+        }
+      `}} />
+
       {/* 🟢 DATA ENTRY FORM */}
       <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden mx-auto">
         <h2 className="text-xl font-bold text-schoolBlue mb-3 border-b-2 pb-2">1. Student Details</h2>
@@ -123,42 +139,52 @@ export default function Marksheet() {
         </div>
       </div>
 
-      {/* 🔴 A4 MARKSHEET CANVAS (ID add kiya hai taaki PDF machine isko pakad sake) */}
-      <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto">
+      {/* 🔴 A4 MARKSHEET CANVAS - Added outer padding (p-2) to create a safe zone for the border */}
+      <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
         
         {/* Background Watermark */}
-        <div className="absolute inset-0 flex justify-center items-center z-0 opacity-10 pointer-events-none">
-          <img src="/logo.png" alt="Watermark" className="w-[400px] h-[400px] object-contain" />
+        <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none">
+          <img src="/logo.png" alt="Watermark" className="w-[450px] h-[450px] object-contain" />
         </div>
 
-        {/* Main Content Wrapper */}
-        <div className="relative z-10 h-full border-[6px] border-schoolRed m-1 p-1 flex flex-col box-border">
-          <div className="border-[2px] border-schoolRed h-full p-3 flex flex-col">
+        {/* Main Content Wrapper - Safe inside the padding */}
+        <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border">
+          <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
             
-            {/* Header Section */}
-            <div className="flex justify-between items-start mb-1">
-              <div className="w-24 h-24 flex items-center justify-center">
+            {/* 🛠️ HEADER SECTION: Enhanced Font, Bigger Logo, Beautiful Banner */}
+            <div className="flex justify-between items-start mb-3">
+              {/* Bigger Logo */}
+              <div className="w-28 h-28 flex items-center justify-center p-1">
                 <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
               </div>
+
+              {/* Enhanced Center Text */}
               <div className="text-center flex-1 px-2">
-                <h1 className="text-3xl font-bold text-schoolRed uppercase tracking-wider">SBS Shiksha Niketan</h1>
-                <p className="font-semibold mt-1">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
-                <div className="mt-1 flex justify-center">
-                  <span className="border border-schoolRed bg-[#fff9c4] px-4 py-1 font-bold text-schoolRed shadow-sm">
+                <h1 className="text-[2.2rem] leading-none font-extrabold text-schoolRed uppercase tracking-widest drop-shadow-sm" style={{ fontFamily: 'Georgia, serif' }}>
+                  SBS Shiksha Niketan
+                </h1>
+                <p className="font-semibold mt-1 text-[13px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
+                
+                {/* Premium Pill Banner */}
+                <div className="mt-3 mb-2 flex justify-center">
+                  <span className="bg-schoolRed text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ring-schoolRed font-bold uppercase tracking-widest text-[11px] shadow-sm">
                     PROGRESS EVALUATION REPORT
                   </span>
                 </div>
-                <p className="text-schoolBlue font-bold mt-1 text-md">ACADEMIC SESSION : 2025-26</p>
-                <p className="font-bold text-lg mt-1">CLASS : 7</p>
+
+                <p className="text-schoolBlue font-extrabold mt-3 text-sm tracking-wide">ACADEMIC SESSION : 2025-26</p>
+                <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : 7</p>
               </div>
-              <div className="w-20 h-24 border border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs mt-1">
-                <span className="text-2xl mb-1">👤</span>
-                <p>Student</p><p>Photo</p>
+
+              {/* Adjusted Photo Box */}
+              <div className="w-24 h-28 border-[2px] border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
+                <span className="text-3xl mb-1">👤</span>
+                <p className="font-semibold">Student</p><p className="font-semibold">Photo</p>
               </div>
             </div>
 
             {/* Dynamic Student Details Section */}
-            <div className="bg-[#e0f7fa] border border-schoolRed p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-1 uppercase">
+            <div className="bg-[#e0f7fa] border border-schoolRed p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-3 uppercase">
               <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
               <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
               <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
@@ -170,7 +196,7 @@ export default function Marksheet() {
             </div>
 
             {/* AUTO-CALCULATING ACADEMIC TABLE */}
-            <div className="w-full flex-1 mb-1 flex flex-col">
+            <div className="w-full flex-1 mb-3 flex flex-col">
               <table className="w-full text-center border-collapse text-[11px] font-bold border-[2px] border-schoolRed">
                 <thead>
                   <tr className="bg-[#fae6d1] text-schoolRed border-b-[2px] border-schoolRed">
@@ -199,45 +225,45 @@ export default function Marksheet() {
                     let subGrade = getGrade(subTotal, 200);
                     return (
                       <tr key={i} className="border-b-[2px] border-schoolRed">
-                        <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">{sub}</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">40</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">{subData.t1}</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">60</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">{subData.t2}</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">100</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">{subData.t3}</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">200</td>
-                        <td className="border-r-[2px] border-schoolRed p-1 text-black">{subTotal > 0 ? subTotal : ''}</td>
-                        <td className="p-1 text-schoolRed">{subTotal > 0 ? subGrade : ''}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">{sub}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">40</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t1}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">60</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t2}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">100</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t3}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5">200</td>
+                        <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{subTotal > 0 ? subTotal : ''}</td>
+                        <td className="p-1.5 text-schoolRed">{subTotal > 0 ? subGrade : ''}</td>
                       </tr>
                     )
                   })}
                   <tr className="border-b-[2px] border-schoolRed bg-[#e0f7fa]">
-                    <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">TOTAL</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">320</td>
-                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT1 > 0 ? gTotalT1 : ''}</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">480</td>
-                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT2 > 0 ? gTotalT2 : ''}</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">800</td>
-                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT3 > 0 ? gTotalT3 : ''}</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">1600</td>
-                    <td className="border-r-[2px] border-schoolRed p-1 text-black text-sm">{grandTotal > 0 ? grandTotal : ''}</td>
-                    <td className="p-1"></td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">TOTAL</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5">320</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT1 > 0 ? gTotalT1 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5">480</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT2 > 0 ? gTotalT2 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5">800</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT3 > 0 ? gTotalT3 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5">1600</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-black text-sm">{grandTotal > 0 ? grandTotal : ''}</td>
+                    <td className="p-1.5"></td>
                   </tr>
                   <tr className="bg-[#e0f7fa]">
-                    <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">PERCENTAGE</td>
-                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">{percentage}%</td>
-                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">{percentage}%</td>
-                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">{percentage}%</td>
-                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black text-sm">{percentage}%</td>
-                    <td className="p-1 text-schoolBlue text-sm">{finalGrade}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">PERCENTAGE</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black text-sm">{percentage}%</td>
+                    <td className="p-1.5 text-schoolBlue text-sm">{finalGrade}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
             {/* Co-Scholastic Area & Grade Scale */}
-            <div className="w-full flex flex-col mt-auto">
+            <div className="w-full flex flex-col mt-auto mb-2">
               <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
                 <tbody>
                   <tr className="border-b-[2px] border-black bg-[#fae6d1]">
@@ -267,7 +293,7 @@ export default function Marksheet() {
                   </tr>
                 </tbody>
               </table>
-              <div className="flex justify-between text-xs font-bold mt-2 text-schoolBlue">
+              <div className="flex justify-between text-[11px] font-bold mt-2 text-schoolBlue">
                 <div>Remark : <span className="border-b border-black inline-block w-64"></span></div>
                 <div>Attendance : <span className="border-b border-black inline-block w-20"></span></div>
                 <div>Class Rank : <span className="border-b border-black inline-block w-20"></span></div>
@@ -275,7 +301,7 @@ export default function Marksheet() {
             </div>
 
             {/* Signatures Footer */}
-            <div className="flex justify-between items-end px-8 pt-3 pb-2 font-semibold text-sm">
+            <div className="flex justify-between items-end px-8 pt-2 pb-1 font-semibold text-sm">
               <div className="border-t border-black w-32 text-center pt-1">Date</div>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
               <div className="flex flex-col items-center">
