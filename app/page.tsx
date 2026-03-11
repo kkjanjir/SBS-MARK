@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, CloudUpload, Loader2 } from 'lucide-react';
+// Yahan CloudUpload hata kar Save add kar diya hai 🛠️
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// 🚀 SUPABASE CONNECTION SETUP (Aapki chabiyan yahan hain)
+// 🚀 SUPABASE CONNECTION SETUP
 const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -222,7 +223,7 @@ export default function MarksheetApp() {
                   ))}
                   {dbStudents.length === 0 && (
                     <div className="py-12 text-center text-gray-500 flex flex-col items-center">
-                      <CloudUpload size={48} className="text-gray-300 mb-3" />
+                      <Save size={48} className="text-gray-300 mb-3" />
                       <p className="font-bold text-lg">No records found!</p>
                       <p className="text-sm">Create a new marksheet and save it to see it here.</p>
                     </div>
@@ -319,13 +320,13 @@ export default function MarksheetApp() {
           {step === 5 && (
             <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
               <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center">
-                <CloudUpload className="mx-auto text-schoolBlue mb-3" size={48} />
+                <Save className="mx-auto text-schoolBlue mb-3" size={48} />
                 <h3 className="text-xl font-bold text-schoolBlue mb-1">Marksheet Ready!</h3>
                 <p className="text-sm font-medium text-gray-600 mb-6">Save this record to the cloud database before printing.</p>
                 
                 <div className="flex flex-col gap-3">
                   <button onClick={saveToCloud} disabled={isSaving} className={`w-full text-white px-6 py-4 rounded-xl shadow-lg font-bold transition-all flex items-center justify-center gap-2 text-lg ${isSaving ? 'bg-blue-400' : 'bg-schoolBlue hover:bg-blue-800 hover:scale-[1.02]'}`}>
-                    {isSaving ? <><Loader2 className="animate-spin" size={20}/> Saving to Cloud...</> : <><CloudUpload size={20} /> Save to Database</>}
+                    {isSaving ? <><Loader2 className="animate-spin" size={20}/> Saving to Cloud...</> : <><Save size={20} /> Save to Database</>}
                   </button>
                   <button onClick={triggerPrint} className="w-full bg-gray-800 text-white px-6 py-4 rounded-xl shadow-lg font-bold hover:scale-[1.02] transition-all flex items-center justify-center gap-2 text-lg">
                     <Printer size={20} /> Print Directly
