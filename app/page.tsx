@@ -157,6 +157,7 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
+  // 🛠️ RANK FUNCTION FIXED HERE
   const getClassRank = (myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
@@ -507,14 +508,14 @@ export default function MarksheetApp() {
         {/* LIVE PREVIEW PANE */}
         <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto no-print">
           <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-            <MarksheetTemplate templateId="marksheet-preview" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
+            <MarksheetTemplate templateId="marksheet-preview" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
           </div>
         </div>
       </div>
 
       {/* 🛑 PRINT / DOWNLOAD RENDER CONTAINER (Visible only to printer and html2canvas) */}
       <div className="hidden print-container">
-        <MarksheetTemplate templateId="marksheet-print-view" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
+        <MarksheetTemplate templateId="marksheet-print-view" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
       </div>
 
     </div>
