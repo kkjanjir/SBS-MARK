@@ -4,6 +4,9 @@ import { useState } from 'react';
 // Subjects List
 const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 
+// 🛠️ TypeScript Fix: Isko bataya ki marks data kaisa dikhega
+type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
+
 export default function Marksheet() {
   // 1. Student Details State
   const [student, setStudent] = useState({
@@ -11,22 +14,25 @@ export default function Marksheet() {
     father: "RAMESH KUMAR", dob: "15-08-2012", admission: "2025/104",
   });
 
-  // 2. Marks State (Sabhi subjects ke marks yahan save honge)
-  const initialMarks = subjectsList.reduce((acc, sub) => ({ ...acc, [sub]: { t1: '', t2: '', t3: '' } }), {});
-  const [marks, setMarks] = useState(initialMarks);
+  // 2. Marks State 
+  const initialMarks: MarksState = {};
+  subjectsList.forEach(sub => {
+    initialMarks[sub] = { t1: '', t2: '', t3: '' };
+  });
+  const [marks, setMarks] = useState<MarksState>(initialMarks);
 
   // Handle Details Change
   const handleDetailChange = (e: any) => {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
   };
 
-  // Handle Marks Change (TypeScript Fix Applied Here 🛠️)
-  const handleMarkChange = (sub: string, term: string, value: string) => {
+  // Handle Marks Change
+  const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
     let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
     
     if (value !== '') {
       let numVal = Number(value);
-      if (numVal < 0 || numVal > max) return; // Rok deta hai agar marks limit se zyada ho
+      if (numVal < 0 || numVal > max) return; // Limit check
     }
     
     setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
@@ -45,9 +51,9 @@ export default function Marksheet() {
   // Grand Totals Calculation
   let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
   subjectsList.forEach(sub => {
-    gTotalT1 += Number(marks[sub as keyof typeof marks].t1) || 0;
-    gTotalT2 += Number(marks[sub as keyof typeof marks].t2) || 0;
-    gTotalT3 += Number(marks[sub as keyof typeof marks].t3) || 0;
+    gTotalT1 += Number(marks[sub].t1) || 0;
+    gTotalT2 += Number(marks[sub].t2) || 0;
+    gTotalT3 += Number(marks[sub].t3) || 0;
   });
   grandTotal = gTotalT1 + gTotalT2 + gTotalT3;
   let percentage = grandTotal > 0 ? ((grandTotal / 1600) * 100).toFixed(1) : "0";
@@ -92,9 +98,9 @@ export default function Marksheet() {
               {subjectsList.map(sub => (
                 <tr key={sub}>
                   <td className="p-1 border text-left font-bold text-xs">{sub}</td>
-                  <td className="p-1 border"><input type="number" value={marks[sub as keyof typeof marks].t1} onChange={(e) => handleMarkChange(sub, 't1', e.target.value)} className="w-16 border text-center p-1" /></td>
-                  <td className="p-1 border"><input type="number" value={marks[sub as keyof typeof marks].t2} onChange={(e) => handleMarkChange(sub, 't2', e.target.value)} className="w-16 border text-center p-1" /></td>
-                  <td className="p-1 border"><input type="number" value={marks[sub as keyof typeof marks].t3} onChange={(e) => handleMarkChange(sub, 't3', e.target.value)} className="w-16 border text-center p-1" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t1} onChange={(e) => handleMarkChange(sub, 't1', e.target.value)} className="w-16 border text-center p-1" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t2} onChange={(e) => handleMarkChange(sub, 't2', e.target.value)} className="w-16 border text-center p-1" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t3} onChange={(e) => handleMarkChange(sub, 't3', e.target.value)} className="w-16 border text-center p-1" /></td>
                 </tr>
               ))}
             </tbody>
@@ -173,7 +179,7 @@ export default function Marksheet() {
                 </thead>
                 <tbody className="text-schoolBlue">
                   {subjectsList.map((sub, i) => {
-                    let subData = marks[sub as keyof typeof marks];
+                    let subData = marks[sub];
                     let subTotal = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
                     let subGrade = getGrade(subTotal, 200);
                     return (
