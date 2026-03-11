@@ -1,9 +1,7 @@
 'use client'
 import { useState } from 'react';
 
-// Subjects List
 const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
-
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 
 export default function Marksheet() {
@@ -17,7 +15,6 @@ export default function Marksheet() {
     initialMarks[sub] = { t1: '', t2: '', t3: '' };
   });
   const [marks, setMarks] = useState<MarksState>(initialMarks);
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDetailChange = (e: any) => {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
@@ -41,38 +38,10 @@ export default function Marksheet() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
-  // 🚀 FIX: HD QUALITY AUR PERFECT ASPECT RATIO LOGIC
-  const handleDownloadPDF = async () => {
-    setIsDownloading(true);
-    window.scrollTo(0, 0); 
-    
-    const element = document.getElementById('marksheet-template');
-    if (element) {
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const { jsPDF } = await import('jspdf');
-        
-        const canvas = await html2canvas(element, { 
-          scale: 3, // Pehle 2 tha, ab 3 kar diya hai Ultra HD Print ke liye
-          useCORS: true,
-          backgroundColor: '#ffffff' // Background 100% white force karega
-        });
-        
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4'); 
-        
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        // 🛠️ Yahan jadoo hai: Canvas ke hisaab se height calculate karega, stretch nahi karega!
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${student.name}_Marksheet.pdf`); 
-      } catch (error) {
-        console.error("Error generating PDF", error);
-        alert("PDF banane me error aayi. Please try again.");
-      }
-    }
-    setIsDownloading(false);
+  // NATIVE PRINT FUNCTION (Fast, 100KB HD PDF)
+  const triggerPrint = () => {
+    document.title = `${student.name}_Marksheet`; // PDF ka naam set karega
+    window.print();
   };
 
   let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
@@ -86,33 +55,36 @@ export default function Marksheet() {
   let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
 
   return (
-    <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:block print:py-0 print:bg-white">
+    <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:p-0 print:bg-white overflow-x-hidden">
       
+      {/* BULLETPROOF 1-PAGE A4 CSS */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
-          @page { size: A4 portrait; margin: 0mm !important; }
+          @page { size: A4 portrait; margin: 0; }
           html, body { 
+            width: 210mm !important; 
+            height: 297mm !important; 
             margin: 0 !important; 
             padding: 0 !important; 
-            width: 210mm; 
-            height: 297mm; 
             overflow: hidden !important; 
-            -webkit-print-color-adjust: exact; 
-            print-color-adjust: exact; 
-            background-color: white;
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+            background: white !important;
           }
-          header, footer { display: none !important; }
+          .no-print { display: none !important; }
+          /* Extra safety for hiding Safari headers/footers */
+          @page { margin-top: 0; margin-bottom: 0; }
         }
       `}} />
 
       {/* 🟢 DATA ENTRY FORM */}
-      <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden mx-auto">
+      <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue no-print mx-auto">
         <h2 className="text-xl font-bold text-schoolBlue mb-3 border-b-2 pb-2">1. Student Details</h2>
         <div className="grid grid-cols-3 gap-3 mb-6">
           {['name', 'roll', 'admission', 'father', 'mother', 'dob'].map((field) => (
             <div key={field}>
               <label className="block text-xs font-bold text-gray-700 uppercase">{field}</label>
-              <input type="text" name={field} value={student[field as keyof typeof student]} onChange={handleDetailChange} className="w-full border-2 border-gray-300 p-1 rounded font-semibold text-sm" />
+              <input type="text" name={field} value={student[field as keyof typeof student]} onChange={handleDetailChange} className="w-full border-2 border-gray-300 p-1 rounded font-semibold text-sm outline-none focus:border-schoolBlue" />
             </div>
           ))}
         </div>
@@ -142,8 +114,8 @@ export default function Marksheet() {
         </div>
       </div>
 
-      {/* 🔴 A4 MARKSHEET CANVAS */}
-      <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
+      {/* 🔴 A4 MARKSHEET CANVAS - Height strictly locked to 296mm to prevent page 2 */}
+      <div className="w-[210mm] h-[296mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 print:p-2 print:m-0 shadow-2xl print:shadow-none" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
         
         {/* Background Watermark */}
         <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none">
@@ -151,8 +123,8 @@ export default function Marksheet() {
         </div>
 
         {/* Main Content Wrapper */}
-        <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
-          <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
+        <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border">
+          <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border bg-white/40">
             
             {/* HEADER SECTION */}
             <div className="flex justify-between items-start mb-3">
@@ -313,14 +285,21 @@ export default function Marksheet() {
         </div>
       </div>
       
-      {/* DIRECT PDF DOWNLOAD BUTTON */}
-      <button 
-        onClick={handleDownloadPDF} 
-        disabled={isDownloading}
-        className={`fixed bottom-8 right-8 text-white px-6 py-3 rounded-full shadow-2xl font-bold transition-all z-50 flex items-center gap-2 ${isDownloading ? 'bg-gray-500 cursor-wait' : 'bg-green-600 hover:bg-green-800 hover:scale-105'}`}
-      >
-        {isDownloading ? '⏳ Generating PDF...' : '⬇️ Download PDF'}
-      </button>
+      {/* BUTTONS SECTION */}
+      <div className="fixed bottom-8 right-8 flex gap-4 no-print z-50">
+        <button 
+          onClick={triggerPrint} 
+          className="bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl font-bold hover:scale-105 transition-all flex items-center gap-2"
+        >
+          🖨️ Print
+        </button>
+        <button 
+          onClick={triggerPrint} 
+          className="bg-green-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold hover:scale-105 transition-all flex items-center gap-2"
+        >
+          ⬇️ Download PDF
+        </button>
+      </div>
 
     </div>
   )
