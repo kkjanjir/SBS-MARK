@@ -18,7 +18,7 @@ export default function MarksheetApp() {
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeClass, setActiveClass] = useState<string>('7'); // Class Folder state
+  const [activeClass, setActiveClass] = useState<string>('7'); 
   
   // App States
   const [dbStudents, setDbStudents] = useState<any[]>([]);
@@ -60,7 +60,21 @@ export default function MarksheetApp() {
 
   useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
 
-  // 📸 PHOTO UPLOAD HANDLER (Local Preview)
+  // 🛠️ MISSING HANDLERS ADDED BACK HERE
+  const handleDetailChange = (e: any) => {
+    setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
+  };
+
+  const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
+    let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
+    if (value !== '') {
+      let numVal = Number(value);
+      if (numVal < 0 || numVal > max) return; 
+    }
+    setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
+  };
+
+  // 📸 PHOTO UPLOAD HANDLER
   const handlePhotoUpload = (e: any) => {
     const file = e.target.files[0];
     if (file) {
@@ -75,7 +89,6 @@ export default function MarksheetApp() {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     setIsSaving(true);
     
-    // Auto-calculate rank helper
     let myTotal = calculateGrandTotal(marks);
     
     const { data, error } = await supabase.from('marks_records').insert([
@@ -94,7 +107,6 @@ export default function MarksheetApp() {
     else {
       setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
       if (addNext) {
-        // Increment Roll No intelligently
         const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
         setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
         resetMarks();
@@ -139,12 +151,10 @@ export default function MarksheetApp() {
   // 🏆 DYNAMIC RANK CALCULATION
   const getDynamicRank = () => {
     if (grandTotal === 0) return "";
-    // Get all students of this class from DB
     const classStudents = dbStudents.filter(s => s.class_name === activeClass);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
-    allTotals.push(grandTotal); // Include current student
-    allTotals.sort((a, b) => b - a); // Sort descending
-    // Find rank (1-based index)
+    allTotals.push(grandTotal); 
+    allTotals.sort((a, b) => b - a); 
     const rank = allTotals.indexOf(grandTotal) + 1;
     return rank > 0 ? `${rank}` : "";
   };
@@ -165,7 +175,6 @@ export default function MarksheetApp() {
             </div>
           </div>
 
-          {/* Class Folders */}
           <div className="mb-8 flex gap-3 overflow-x-auto pb-2">
             {['5', '6', '7', '8', '9', '10'].map(cls => (
               <button 
@@ -187,7 +196,6 @@ export default function MarksheetApp() {
             </button>
           </div>
 
-          {/* Student List */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: Class {activeClass}</h3></div>
             <div className="divide-y divide-gray-100 min-h-[200px]">
@@ -227,10 +235,8 @@ export default function MarksheetApp() {
       <div className="flex-1 flex flex-col lg:flex-row w-full no-print">
         <div className="w-full lg:w-[45%] bg-white p-6 border-r overflow-y-auto no-print h-[calc(100vh-60px)]">
           
-          {/* Last Saved Toast */}
           {lastSaved && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded-lg text-sm font-bold text-center animate-pulse">{lastSaved}</div>}
 
-          {/* Stepper */}
           <div className="flex justify-between items-center mb-6 relative">
             <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2"></div>
             <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
@@ -239,7 +245,6 @@ export default function MarksheetApp() {
             ))}
           </div>
 
-          {/* WIZARD CONTENT */}
           <div className="space-y-4">
             {step === 1 && (
               <>
@@ -252,15 +257,15 @@ export default function MarksheetApp() {
                     </div>
                   </label>
                   <div className="flex-1 grid grid-cols-2 gap-3">
-                    <div><label className="text-xs font-bold">Name</label><input type="text" name="name" value={student.name} onChange={(e)=>setStudent({...student, name: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
+                    <div><label className="text-xs font-bold">Name</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
                     <div><label className="text-xs font-bold">Roll No (Editable)</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border p-2 rounded" /></div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-bold">Gender</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border p-2 rounded"><option>MALE</option><option>FEMALE</option></select></div>
                   <div><label className="text-xs font-bold">DOB (Smart Calendar)</label><input type="date" name="dob" value={student.dob} max="2020-12-31" min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border p-2 rounded uppercase" /></div>
-                  <div><label className="text-xs font-bold">Father</label><input type="text" name="father" value={student.father} onChange={(e)=>setStudent({...student, father: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
-                  <div><label className="text-xs font-bold">Mother</label><input type="text" name="mother" value={student.mother} onChange={(e)=>setStudent({...student, mother: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
+                  <div><label className="text-xs font-bold">Father</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
+                  <div><label className="text-xs font-bold">Mother</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
                   <div className="col-span-2">
                     <label className="text-xs font-bold">Address (Auto-Suggest)</label>
                     <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" />
@@ -325,7 +330,6 @@ export default function MarksheetApp() {
           </div>
         </div>
 
-        {/* LIVE PREVIEW PANE */}
         <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto no-print">
           <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
             <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
@@ -336,9 +340,6 @@ export default function MarksheetApp() {
   )
 }
 
-// ==========================================
-// MARKSHEET TEMPLATE (Smart Colors & Data)
-// ==========================================
 function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
@@ -347,7 +348,6 @@ function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentag
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
   };
 
-  // Helper formatting for Date
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split('-');
@@ -437,7 +437,6 @@ function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentag
               </tbody>
             </table>
             
-            {/* DYNAMIC COLOR GRADE SCALE */}
             <table className="w-full text-[10px] border-[2px] border-black text-center font-bold">
               <tbody>
                 <tr>
