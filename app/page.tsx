@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette } from 'lucide-react';
+// 🛠️ FIX: Download icon yahan add kar diya gaya hai
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
