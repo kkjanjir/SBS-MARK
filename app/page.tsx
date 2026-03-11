@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-// 🛠️ FIX: Download icon yahan add kar diya gaya hai
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -23,6 +22,15 @@ type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
 
 export default function MarksheetApp() {
+  // 🔒 AUTH STATES
+  const [session, setSession] = useState<any>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,28 +38,24 @@ export default function MarksheetApp() {
   const [showPrePrimary, setShowPrePrimary] = useState(false);
   const [activeTheme, setActiveTheme] = useState<'classic'|'emerald'|'royal'>('classic');
   
-  // Custom Subjects State
   const [subjectConfig, setSubjectConfig] = useState<Record<string, string[]>>({});
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [tempSubjects, setTempSubjects] = useState<string[]>([]);
   const [newSubInput, setNewSubInput] = useState('');
 
-  // App States
   const [dbStudents, setDbStudents] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
+  
+  const [isDownloadingSingle, setIsDownloadingSingle] = useState(false);
+  const [isBulkPrinting, setIsBulkPrinting] = useState(false);
 
-  // Default Issue Date Logic
   const currentYear = new Date().getFullYear();
   const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
-
-  // DOB Limit
-  const maxDobDate = new Date();
-  maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
+  const maxDobDate = new Date(); maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
   const maxDobStr = maxDobDate.toISOString().split('T')[0];
 
-  // Form States
   const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", dob: "", admission: "", gender: "MALE", address: "" });
   const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
@@ -60,6 +64,18 @@ export default function MarksheetApp() {
 
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+
+  // 🛡️ CHECK AUTH STATUS ON LOAD
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setIsCheckingAuth(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const savedConfig = localStorage.getItem('sbsSubjects');
@@ -70,13 +86,29 @@ export default function MarksheetApp() {
   }, [activeClass]);
 
   const fetchStudentsFromCloud = async () => {
+    if (!session) return;
     setIsLoadingList(true);
     const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
     if (data) setDbStudents(data);
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
+  useEffect(() => { if (session && view === 'dashboard' && !isBulkPrinting) fetchStudentsFromCloud(); }, [session, view, isBulkPrinting]);
+
+  // 🔑 LOGIN HANDLER
+  const handleLogin = async (e: any) => {
+    e.preventDefault();
+    setIsLoggingIn(true); setLoginError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setLoginError(error.message);
+    setIsLoggingIn(false);
+  };
+
+  // 🚪 LOGOUT HANDLER
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setView('dashboard');
+  };
 
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
@@ -131,7 +163,6 @@ export default function MarksheetApp() {
     setStudentPhoto(null);
   };
 
-  // --- CALCULATIONS ---
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
     let p = (Number(marksObtained) / maxMarks) * 100;
@@ -181,12 +212,114 @@ export default function MarksheetApp() {
     resetMarks();
   };
 
-  // 🖨️ NATIVE PRINT TRIGGER (Used for both Print and Download PDF)
   const triggerPrint = (type: 'single' | 'bulk') => {
     if(type === 'single') document.title = `${student.name || 'Student'}_Class_${activeClass}_Marksheet`;
     else document.title = `Class_${activeClass}_All_Marksheets`;
     window.print();
   };
+
+  const handleSingleDownload = async () => {
+    setIsDownloadingSingle(true);
+    window.scrollTo(0, 0); 
+    const element = document.getElementById('marksheet-export-target');
+    if (element) {
+      try {
+        const html2canvas = (await import('html2canvas')).default;
+        const { jsPDF } = await import('jspdf');
+        const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4'); 
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`${student.name || 'Student'} - Class ${activeClass}.pdf`); 
+      } catch (error) {
+        alert("PDF Error!");
+      }
+    }
+    setIsDownloadingSingle(false);
+  };
+
+  const handleBulkDownload = () => {
+    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+    if (classStudents.length === 0) return alert("No students in this class to download!");
+    setIsBulkPrinting(true);
+    setTimeout(() => { document.title = `Class_${activeClass}_All_Marksheets`; window.print(); setIsBulkPrinting(false); }, 1000);
+  };
+
+  // ==========================================
+  // VIEW 0: LOGIN SCREEN 🔒
+  // ==========================================
+  if (isCheckingAuth) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-schoolBlue" size={48}/></div>;
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Decorations */}
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
+        <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-orange-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
+
+        <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-md relative z-10 border border-white">
+          <div className="text-center mb-8">
+            <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
+            <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
+            
+            <div className="relative">
+              <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
+              <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue focus:ring-4 focus:ring-schoolBlue/10 transition-all font-semibold" />
+            </div>
+            
+            <div className="relative">
+              <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
+              <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue focus:ring-4 focus:ring-schoolBlue/10 transition-all font-semibold" />
+            </div>
+
+            <button type="submit" disabled={isLoggingIn} className="w-full bg-schoolBlue hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-schoolBlue/30 flex items-center justify-center gap-2 active:scale-95">
+              {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
+            </button>
+          </form>
+          <div className="mt-8 text-center text-xs text-gray-400 font-semibold flex items-center justify-center gap-1">
+            <Lock size={12}/> Protected by Supabase Auth
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  // ==========================================
+  // BULK PRINT RENDERER (Only visible when Bulk Printing)
+  // ==========================================
+  if (isBulkPrinting) {
+    const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
+    return (
+      <div className="bg-white print:bg-white w-full">
+        <style dangerouslySetInnerHTML={{__html: `
+          @media print {
+            @page { size: A4 portrait; margin: 0; }
+            body { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page-break { page-break-after: always; display: block; margin: 0; padding: 0; border: none; }
+          }
+        `}} />
+        {classFilteredStudents.map((s, index) => {
+          const calcs = getCalculations(s.marks_data, s.class_name);
+          return (
+            <div key={s.id} className="w-[210mm] h-[296.5mm] mx-auto overflow-hidden bg-white" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
+            </div>
+          )
+        })}
+      </div>
+    );
+  }
 
 
   // ==========================================
@@ -196,27 +329,16 @@ export default function MarksheetApp() {
     const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
     return (
       <>
-        {/* GLOBAL PRINT CSS (Perfect 1 Page Strict Engine) */}
         <style dangerouslySetInnerHTML={{__html: `
           @media print {
             @page { size: A4 portrait; margin: 0 !important; }
             body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .no-print { display: none !important; }
-            .print-page { 
-              width: 210mm !important; 
-              height: 296.5mm !important; 
-              overflow: hidden !important; 
-              page-break-after: always; 
-              page-break-inside: avoid;
-              margin: 0 auto !important; 
-              padding: 0 !important;
-              box-sizing: border-box !important;
-            }
+            .print-page { width: 210mm !important; height: 296.5mm !important; overflow: hidden !important; page-break-after: always; page-break-inside: avoid; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; }
             .print-page:last-child { page-break-after: auto; }
           }
         `}} />
 
-        {/* 💻 DASHBOARD UI (Hidden in Print) */}
         <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative no-print">
           <div className="w-full max-w-5xl">
             
@@ -228,6 +350,11 @@ export default function MarksheetApp() {
                   <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
                 </div>
               </div>
+              
+              {/* LOGOUT BUTTON */}
+              <button onClick={handleLogout} className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100">
+                <LogOut size={18} /> Logout
+              </button>
             </div>
 
             <div className="mb-6 flex flex-wrap gap-3">
@@ -256,7 +383,6 @@ export default function MarksheetApp() {
                 <input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
               
-              {/* 🎨 THEME SELECTOR */}
               <div className="bg-white border-2 border-gray-200 rounded-xl flex items-center px-3 shadow-sm hover:border-gray-300 transition-all">
                 <Palette size={18} className="text-gray-400 mr-2" />
                 <select value={activeTheme} onChange={e => { setActiveTheme(e.target.value as any); localStorage.setItem('sbsTheme', e.target.value); }} className="py-3 bg-transparent font-bold text-gray-700 outline-none cursor-pointer appearance-none pr-4">
@@ -287,7 +413,8 @@ export default function MarksheetApp() {
                       setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
                     }}>
                       <div className="flex items-center gap-4">
-                        {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
+                        {/* PHOTO CROP FIX IN LIST */}
+                        {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
                         <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
                       </div>
                       <ChevronRight className="text-gray-400" />
@@ -298,7 +425,6 @@ export default function MarksheetApp() {
             </div>
           </div>
 
-          {/* SUBJECT MODAL */}
           {showSubjectModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
@@ -323,22 +449,6 @@ export default function MarksheetApp() {
             </div>
           )}
         </div>
-
-        {/* 🖨️ BULK PRINT RENDERER (Only visible to printer) */}
-        <div className="hidden print:block bg-white w-full">
-          {classFilteredStudents.length > 0 ? (
-            classFilteredStudents.map((s, index) => {
-              const calcs = getCalculations(s.marks_data, s.class_name);
-              return (
-                <div key={s.id} className="print-page">
-                  <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
-                </div>
-              )
-            })
-          ) : (
-            <div className="p-10 font-bold">No students in this class to print.</div>
-          )}
-        </div>
       </>
     );
   }
@@ -358,6 +468,10 @@ export default function MarksheetApp() {
       `}} />
 
       <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden no-print">
+        <div className="absolute top-[-9999px] left-[-9999px] pointer-events-none">
+          <MarksheetTemplate templateId="marksheet-export-target" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+        </div>
+
         <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center">
           <button onClick={() => setView('dashboard')} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
           <span className="font-bold text-schoolBlue">Editing: {activeClass}</span>
@@ -383,7 +497,8 @@ export default function MarksheetApp() {
                   <div className="flex items-center gap-4 mb-4">
                     <label className="cursor-pointer">
                       <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative">
-                        {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
+                        {/* PHOTO CROP FIX IN WIZARD PREVIEW */}
+                        {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover object-top" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
                         <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
                       </div>
                     </label>
@@ -456,9 +571,11 @@ export default function MarksheetApp() {
                     
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t">
                       <button onClick={() => triggerPrint('single')} className="bg-gray-800 text-white p-3 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-gray-900"><Printer size={18}/> Print</button>
-                      <button onClick={() => triggerPrint('single')} className="bg-red-600 text-white p-3 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-red-700"><Download size={18}/> Save PDF</button>
+                      <button onClick={handleSingleDownload} disabled={isDownloadingSingle} className={`text-white p-3 rounded-lg font-bold flex justify-center items-center gap-2 ${isDownloadingSingle ? 'bg-gray-400' : 'bg-red-600 hover:bg-red-700'}`}>
+                        {isDownloadingSingle ? <Loader2 className="animate-spin" size={18}/> : <Download size={18}/>} Save PDF
+                      </button>
                     </div>
-                    <p className="text-xs text-gray-500 text-center mt-1 font-semibold">*To Download PDF: Click above, then tap "Share" icon (top right) in the print dialog and choose "Save to Files".</p>
+                    <p className="text-xs text-gray-500 text-center mt-1 font-semibold">*To Save PDF natively: Click Print, then tap "Share" icon (top right) in the print dialog and choose "Save to Files".</p>
                   </div>
                 </>
               )}
@@ -472,16 +589,15 @@ export default function MarksheetApp() {
 
           <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto">
             <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+              <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* 🖨️ SINGLE PRINT RENDERER (Only visible to printer) */}
       <div className="hidden print:block bg-white w-full">
         <div className="print-page">
-          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+          <MarksheetTemplate templateId="marksheet-print-view" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
         </div>
       </div>
     </>
@@ -489,9 +605,9 @@ export default function MarksheetApp() {
 }
 
 // ==========================================
-// MARKSHEET TEMPLATE (Color Themed)
+// MARKSHEET TEMPLATE (Color Themed & Photo Fixed)
 // ==========================================
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+function MarksheetTemplate({ templateId, theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -505,10 +621,10 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     return `${day}-${month}-${year}`;
   };
 
-  const t = theme || THEMES.classic; // Fallback
+  const t = theme || THEMES.classic; 
 
   return (
-    <div className={`w-[210mm] h-[296.5mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-xl print:shadow-none`}>
+    <div id={templateId} className={`w-[210mm] h-[296.5mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
@@ -523,7 +639,8 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
               <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : {activeClass}</p>
             </div>
             <div className="w-24 h-28 border-[2px] border-gray-400 flex items-center justify-center bg-gray-50 overflow-hidden">
-              {photo ? <img src={photo} className="w-full h-full object-cover"/> : <span className="text-gray-400 text-xs text-center font-bold px-2">Upload Photo</span>}
+              {/* 📸 PHOTO CROP FIX (object-top) applied here */}
+              {photo ? <img src={photo} className="w-full h-full object-cover object-top"/> : <span className="text-gray-400 text-xs text-center font-bold px-2">Upload Photo</span>}
             </div>
           </div>
 
