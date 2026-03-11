@@ -17,6 +17,7 @@ export default function Marksheet() {
     initialMarks[sub] = { t1: '', t2: '', t3: '' };
   });
   const [marks, setMarks] = useState<MarksState>(initialMarks);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDetailChange = (e: any) => {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
@@ -40,6 +41,38 @@ export default function Marksheet() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
+  // 🚀 DIRECT PDF DOWNLOAD LOGIC
+  const handleDownloadPDF = async () => {
+    setIsDownloading(true);
+    window.scrollTo(0, 0); // Scroll top taaki PDF cut na ho
+    
+    const element = document.getElementById('marksheet-template');
+    if (element) {
+      try {
+        // Vercel build error se bachne ke liye dynamic import
+        const html2canvas = (await import('html2canvas')).default;
+        const { jsPDF } = await import('jspdf');
+        
+        const canvas = await html2canvas(element, { 
+          scale: 2, // High Quality HD PDF
+          useCORS: true // Images ke liye
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4'); // A4 Size Set kiya
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`${student.name}_Marksheet.pdf`); // Student ke naam se save hoga
+      } catch (error) {
+        console.error("Error generating PDF", error);
+        alert("PDF banane me error aayi. Please try again.");
+      }
+    }
+    setIsDownloading(false);
+  };
+
   let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
   subjectsList.forEach(sub => {
     gTotalT1 += Number(marks[sub].t1) || 0;
@@ -51,28 +84,8 @@ export default function Marksheet() {
   let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
 
   return (
-    // Print me flex center hatakar block kiya taaki top margin zero ho jaye
     <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:block print:py-0 print:bg-white">
       
-      {/* EXTREME 1-PAGE PRINT CSS FIX FOR iOS/SAFARI */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          @page { size: A4 portrait; margin: 0mm !important; }
-          html, body { 
-            margin: 0 !important; 
-            padding: 0 !important; 
-            width: 210mm; 
-            height: 297mm; 
-            overflow: hidden !important; 
-            -webkit-print-color-adjust: exact; 
-            print-color-adjust: exact; 
-            background-color: white;
-          }
-          /* Removes default headers/footers in Safari */
-          header, footer { display: none !important; }
-        }
-      `}} />
-
       {/* 🟢 DATA ENTRY FORM */}
       <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden mx-auto">
         <h2 className="text-xl font-bold text-schoolBlue mb-3 border-b-2 pb-2">1. Student Details</h2>
@@ -110,15 +123,15 @@ export default function Marksheet() {
         </div>
       </div>
 
-      {/* 🔴 A4 MARKSHEET CANVAS (Height reduced strictly to 296mm to prevent page 2) */}
-      <div className="w-[210mm] h-[297mm] bg-white relative print:w-[210mm] print:h-[296mm] print:mx-auto shadow-2xl print:shadow-none overflow-hidden text-black text-sm box-border mx-auto" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
+      {/* 🔴 A4 MARKSHEET CANVAS (ID add kiya hai taaki PDF machine isko pakad sake) */}
+      <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto">
         
         {/* Background Watermark */}
         <div className="absolute inset-0 flex justify-center items-center z-0 opacity-10 pointer-events-none">
           <img src="/logo.png" alt="Watermark" className="w-[400px] h-[400px] object-contain" />
         </div>
 
-        {/* Main Content Wrapper - Tightened padding slightly */}
+        {/* Main Content Wrapper */}
         <div className="relative z-10 h-full border-[6px] border-schoolRed m-1 p-1 flex flex-col box-border">
           <div className="border-[2px] border-schoolRed h-full p-3 flex flex-col">
             
@@ -275,15 +288,13 @@ export default function Marksheet() {
         </div>
       </div>
       
-      {/* Floating Print Button */}
+      {/* DIRECT PDF DOWNLOAD BUTTON */}
       <button 
-        onClick={() => {
-          document.title = student.name + " - Marksheet"; 
-          window.print();
-        }} 
-        className="fixed bottom-8 right-8 bg-schoolBlue text-white px-6 py-3 rounded-full shadow-2xl font-bold print:hidden hover:bg-blue-800 hover:scale-105 transition-all z-50"
+        onClick={handleDownloadPDF} 
+        disabled={isDownloading}
+        className={`fixed bottom-8 right-8 text-white px-6 py-3 rounded-full shadow-2xl font-bold transition-all z-50 flex items-center gap-2 ${isDownloading ? 'bg-gray-500 cursor-wait' : 'bg-green-600 hover:bg-green-800 hover:scale-105'}`}
       >
-        🖨️ Print Marksheet
+        {isDownloading ? '⏳ Generating PDF...' : '⬇️ Download PDF'}
       </button>
 
     </div>
