@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -8,8 +8,7 @@ const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
-const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
+const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
@@ -18,13 +17,29 @@ export default function MarksheetApp() {
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeClass, setActiveClass] = useState<string>('7'); 
+  const [activeClass, setActiveClass] = useState<string>('5'); 
+  const [showPrePrimary, setShowPrePrimary] = useState(false);
   
+  // Custom Subjects State
+  const [subjectConfig, setSubjectConfig] = useState<Record<string, string[]>>({});
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
+  const [tempSubjects, setTempSubjects] = useState<string[]>([]);
+  const [newSubInput, setNewSubInput] = useState('');
+
   // App States
   const [dbStudents, setDbStudents] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
+
+  // Default Issue Date Logic (March 31 of current session)
+  const currentYear = new Date().getFullYear();
+  const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
+
+  // DOB Max Date Limit (At least 2 years old)
+  const maxDobDate = new Date();
+  maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
+  const maxDobStr = maxDobDate.toISOString().split('T')[0];
 
   // Form States
   const [student, setStudent] = useState({
@@ -32,7 +47,7 @@ export default function MarksheetApp() {
   });
   
   const [extraDetails, setExtraDetails] = useState({
-    attendance: "", remark: "", issueDate: new Date().toISOString().split('T')[0]
+    attendance: "", remark: "", issueDate: defaultIssue
   });
 
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({
@@ -40,15 +55,17 @@ export default function MarksheetApp() {
   });
 
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
+  const [marks, setMarks] = useState<MarksState>({});
 
-  const [marks, setMarks] = useState<MarksState>(() => {
-    const initial: MarksState = {};
-    subjectsList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
-    return initial;
-  });
-
-  // Unique Addresses for Auto-suggest
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
+  const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+
+  // Initialize System
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('sbsSubjects');
+    if (savedConfig) setSubjectConfig(JSON.parse(savedConfig));
+    resetMarks();
+  }, [activeClass]);
 
   // 📡 FETCH FROM CLOUD
   const fetchStudentsFromCloud = async () => {
@@ -60,21 +77,15 @@ export default function MarksheetApp() {
 
   useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
 
-  // 🛠️ MISSING HANDLERS ADDED BACK HERE
-  const handleDetailChange = (e: any) => {
-    setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
-  };
+  // 🛠️ HANDLERS
+  const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
     let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
-    if (value !== '') {
-      let numVal = Number(value);
-      if (numVal < 0 || numVal > max) return; 
-    }
-    setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
+    if (value !== '') { let numVal = Number(value); if (numVal < 0 || numVal > max) return; }
+    setMarks(prev => ({ ...prev, [sub]: { ...(prev[sub] || {t1:'', t2:'', t3:''}), [term]: value } }));
   };
 
-  // 📸 PHOTO UPLOAD HANDLER
   const handlePhotoUpload = (e: any) => {
     const file = e.target.files[0];
     if (file) {
@@ -88,16 +99,12 @@ export default function MarksheetApp() {
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     setIsSaving(true);
-    
     let myTotal = calculateGrandTotal(marks);
     
     const { data, error } = await supabase.from('marks_records').insert([
       { 
-        student_name: student.name, 
-        roll_no: student.roll,
-        class_name: activeClass,
-        student_data: { ...student, photo: studentPhoto }, 
-        marks_data: marks,
+        student_name: student.name, roll_no: student.roll, class_name: activeClass,
+        student_data: { ...student, photo: studentPhoto }, marks_data: marks,
         extra_data: { ...extraDetails, coScholastic, total: myTotal }
       }
     ]);
@@ -121,34 +128,45 @@ export default function MarksheetApp() {
 
   const resetMarks = () => {
     const initial: MarksState = {};
-    subjectsList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
+    const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+    subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
-    setExtraDetails({ attendance: "", remark: "", issueDate: new Date().toISOString().split('T')[0] });
+    setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue });
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
   };
 
-  // --- CALCULATIONS ---
+  // --- CALCULATIONS & LOGIC ---
   const calculateGrandTotal = (m: MarksState) => {
     let total = 0;
-    subjectsList.forEach(sub => { total += (Number(m[sub]?.t1)||0) + (Number(m[sub]?.t2)||0) + (Number(m[sub]?.t3)||0); });
+    currentSubjectsList.forEach(sub => { total += (Number(m[sub]?.t1)||0) + (Number(m[sub]?.t2)||0) + (Number(m[sub]?.t3)||0); });
     return total;
   };
 
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
     let perc = (Number(marksObtained) / maxMarks) * 100;
-    if (perc >= 91) return 'A1'; if (perc >= 81) return 'A2';
-    if (perc >= 71) return 'B1'; if (perc >= 61) return 'B2';
-    if (perc >= 51) return 'C1'; if (perc >= 41) return 'C2';
-    if (perc >= 33) return 'D';  return 'E';
+    if (perc >= 91) return 'A1'; if (perc >= 81) return 'A2'; if (perc >= 71) return 'B1'; if (perc >= 61) return 'B2';
+    if (perc >= 51) return 'C1'; if (perc >= 41) return 'C2'; if (perc >= 33) return 'D';  return 'E';
   };
 
   let grandTotal = calculateGrandTotal(marks);
-  let percentage = grandTotal > 0 ? ((grandTotal / 1600) * 100).toFixed(1) : "0";
-  let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
+  let percentage = grandTotal > 0 ? ((grandTotal / (currentSubjectsList.length * 200)) * 100).toFixed(1) : "0";
+  let finalGrade = grandTotal > 0 ? getGrade(grandTotal, currentSubjectsList.length * 200) : "";
 
-  // 🏆 DYNAMIC RANK CALCULATION
+  // 🤖 AUTO-REMARK GENERATOR
+  useEffect(() => {
+    if (step === 5 && !extraDetails.remark && finalGrade) {
+      let autoRemark = "Good effort.";
+      if (finalGrade === 'A1') autoRemark = "Outstanding performance! Keep it up.";
+      else if (finalGrade === 'A2') autoRemark = "Excellent work. Very proud of you.";
+      else if (finalGrade === 'B1' || finalGrade === 'B2') autoRemark = "Good performance. Can do even better.";
+      else if (finalGrade === 'C1' || finalGrade === 'C2') autoRemark = "Average performance. Needs more focus.";
+      else if (finalGrade === 'D' || finalGrade === 'E') autoRemark = "Needs serious attention and hard work.";
+      setExtraDetails(prev => ({ ...prev, remark: autoRemark }));
+    }
+  }, [step, finalGrade]);
+
   const getDynamicRank = () => {
     if (grandTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === activeClass);
@@ -159,6 +177,15 @@ export default function MarksheetApp() {
     return rank > 0 ? `${rank}` : "";
   };
 
+  // SUBJECT MANAGER
+  const saveSubjects = () => {
+    const newConfig = { ...subjectConfig, [activeClass]: tempSubjects };
+    setSubjectConfig(newConfig);
+    localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
+    setShowSubjectModal(false);
+    resetMarks();
+  };
+
 
   // ==========================================
   // VIEW 1: DASHBOARD
@@ -166,41 +193,59 @@ export default function MarksheetApp() {
   if (view === 'dashboard') {
     const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
         <div className="w-full max-w-5xl">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl font-extrabold text-schoolRed">EduPrime SMS</h1>
-              <p className="text-gray-500 font-medium">Marksheet ERP System</p>
+          
+          {/* Enhanced Branding */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+            <div className="flex items-center gap-4">
+              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md" />
+              <div>
+                <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
+                <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
+              </div>
             </div>
           </div>
 
-          <div className="mb-8 flex gap-3 overflow-x-auto pb-2">
-            {['5', '6', '7', '8', '9', '10'].map(cls => (
-              <button 
-                key={cls} onClick={() => setActiveClass(cls)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}
-              >
+          {/* Class Folders & Pre-Primary Logic */}
+          <div className="mb-6 flex flex-wrap gap-3">
+            <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
+              <Folder size={18} className={['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? "text-yellow-200" : "text-gray-400"}/> Pre-Primary
+            </button>
+            {['1', '2', '3', '4', '5'].map(cls => (
+              <button key={cls} onClick={() => {setActiveClass(cls); setShowPrePrimary(false);}} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
                 <Folder size={18} className={activeClass === cls ? "text-yellow-300" : "text-gray-400"}/> Class {cls}
               </button>
             ))}
           </div>
 
+          {showPrePrimary && (
+            <div className="mb-8 flex gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100 animate-in fade-in slide-in-from-top-2">
+              <span className="text-orange-800 font-bold self-center mr-2 text-sm">Select Sub-Class:</span>
+              {['NURSERY', 'LKG', 'UKG'].map(cls => (
+                <button key={cls} onClick={() => setActiveClass(cls)} className={`px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-sm ${activeClass === cls ? 'bg-orange-600 text-white scale-105' : 'bg-white text-orange-800 border border-orange-200 hover:bg-orange-100'}`}>{cls}</button>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
-              <input type="text" placeholder={`Search in Class ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
-            <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg">
-              <Plus size={20} /> Add to Class {activeClass}
+            <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50">
+              <Settings size={20} /> Subjects
+            </button>
+            <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-800">
+              <Plus size={20} /> Add to {activeClass}
             </button>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: Class {activeClass}</h3></div>
+            <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
             <div className="divide-y divide-gray-100 min-h-[200px]">
               {isLoadingList ? <div className="p-10 text-center text-gray-400">Loading...</div> : 
-                classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty.</div> :
+                classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                 classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
                   <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
                     setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
@@ -216,6 +261,31 @@ export default function MarksheetApp() {
             </div>
           </div>
         </div>
+
+        {/* SUBJECT MANAGEMENT MODAL */}
+        {showSubjectModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Manage Subjects for {activeClass}</h2>
+                <button onClick={() => setShowSubjectModal(false)} className="text-gray-500 hover:text-red-500"><X size={24}/></button>
+              </div>
+              <div className="space-y-2 mb-6 max-h-[40vh] overflow-y-auto">
+                {tempSubjects.map((sub, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-gray-50 border p-3 rounded-lg">
+                    <span className="font-bold">{sub}</span>
+                    <button onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={18}/></button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 mb-6">
+                <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
+                <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl">Add</button>
+              </div>
+              <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800">Save Subject List</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -229,7 +299,7 @@ export default function MarksheetApp() {
 
       <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print">
         <button onClick={() => setView('dashboard')} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
-        <span className="font-bold text-schoolBlue">Editing: Class {activeClass}</span>
+        <span className="font-bold text-schoolBlue">Editing: {activeClass}</span>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row w-full no-print">
@@ -258,16 +328,16 @@ export default function MarksheetApp() {
                   </label>
                   <div className="flex-1 grid grid-cols-2 gap-3">
                     <div><label className="text-xs font-bold">Name</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
-                    <div><label className="text-xs font-bold">Roll No (Editable)</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border p-2 rounded" /></div>
+                    <div><label className="text-xs font-bold">Roll No</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border p-2 rounded" /></div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="text-xs font-bold">Gender</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border p-2 rounded"><option>MALE</option><option>FEMALE</option></select></div>
-                  <div><label className="text-xs font-bold">DOB (Smart Calendar)</label><input type="date" name="dob" value={student.dob} max="2020-12-31" min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border p-2 rounded uppercase" /></div>
+                  <div><label className="text-xs font-bold">DOB</label><input type="date" name="dob" value={student.dob} max={maxDobStr} min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border p-2 rounded uppercase" /></div>
                   <div><label className="text-xs font-bold">Father</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
                   <div><label className="text-xs font-bold">Mother</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border p-2 rounded" /></div>
                   <div className="col-span-2">
-                    <label className="text-xs font-bold">Address (Auto-Suggest)</label>
+                    <label className="text-xs font-bold">Address</label>
                     <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" />
                     <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
                   </div>
@@ -278,12 +348,18 @@ export default function MarksheetApp() {
             {[2, 3, 4].includes(step) && (
               <>
                 <h2 className="text-xl font-bold mb-4">Term {step-1} Marks</h2>
-                {subjectsList.map(sub => (
+                {currentSubjectsList.map(sub => {
+                  const term = step===2?'t1':step===3?'t2':'t3';
+                  const maxVal = step===2?40:step===3?60:100;
+                  return (
                   <div key={sub} className="flex justify-between items-center bg-gray-50 p-2 rounded border mb-2">
                     <span className="font-bold text-xs">{sub}</span>
-                    <input type="number" value={marks[sub][step===2?'t1':step===3?'t2':'t3']} onChange={(e) => handleMarkChange(sub, step===2?'t1':step===3?'t2':'t3', e.target.value)} className="w-16 border p-1 rounded text-center font-bold" />
+                    <div className="flex items-center gap-2">
+                      <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} className="w-16 border p-1 rounded text-center font-bold" />
+                      <span className="text-xs font-bold text-gray-400 w-12 text-right">MM: {maxVal}</span>
+                    </div>
                   </div>
-                ))}
+                )})}
               </>
             )}
 
@@ -305,9 +381,8 @@ export default function MarksheetApp() {
                   <div><label className="text-xs font-bold">Attendance (e.g. 210/220)</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border p-2 rounded" /></div>
                   <div><label className="text-xs font-bold">Issue Date</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border p-2 rounded" /></div>
                   <div className="col-span-2">
-                    <label className="text-xs font-bold">Remarks Dropdown</label>
-                    <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border p-2 rounded" placeholder="Type or select..." />
-                    <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
+                    <label className="text-xs font-bold">Remarks (Auto-filled by Grade)</label>
+                    <input type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border p-2 rounded" />
                   </div>
                 </div>
 
@@ -332,7 +407,7 @@ export default function MarksheetApp() {
 
         <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto no-print">
           <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-            <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
+            <MarksheetTemplate student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
           </div>
         </div>
       </div>
@@ -405,7 +480,7 @@ function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentag
               </thead>
               <tbody className="text-schoolBlue">
                 {subjectsList.map((sub: string, i: number) => {
-                  let subData = marks[sub]; let tot = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
+                  let subData = marks[sub] || {}; let tot = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
                   return (
                     <tr key={i} className="border-b-[2px] border-schoolRed">
                       <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">{sub}</td>
@@ -461,7 +536,10 @@ function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentag
           </div>
 
           <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm">
-            <div className="border-t border-black w-32 text-center pt-1">{formatDate(extra.issueDate)}</div>
+            <div className="flex flex-col items-center pt-1 w-32">
+              <span className="font-bold mb-1">{formatDate(extra.issueDate)}</span>
+              <div className="border-t border-dashed border-black w-full text-center pt-1">Date of Issue</div>
+            </div>
             <div className="flex flex-col items-center">
               <img src="/class_teacher_sign.png" alt="" className="h-[40px] mb-1 object-contain" onError={(e)=>e.currentTarget.style.display='none'}/>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
