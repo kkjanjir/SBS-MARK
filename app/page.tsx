@@ -41,6 +41,7 @@ export default function Marksheet() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
+  // 🚀 FIX: HD QUALITY AUR PERFECT ASPECT RATIO LOGIC
   const handleDownloadPDF = async () => {
     setIsDownloading(true);
     window.scrollTo(0, 0); 
@@ -52,14 +53,17 @@ export default function Marksheet() {
         const { jsPDF } = await import('jspdf');
         
         const canvas = await html2canvas(element, { 
-          scale: 2, 
-          useCORS: true 
+          scale: 3, // Pehle 2 tha, ab 3 kar diya hai Ultra HD Print ke liye
+          useCORS: true,
+          backgroundColor: '#ffffff' // Background 100% white force karega
         });
         
         const imgData = canvas.toDataURL('image/png');
         const pdf = new jsPDF('p', 'mm', 'a4'); 
+        
         const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
+        // 🛠️ Yahan jadoo hai: Canvas ke hisaab se height calculate karega, stretch nahi karega!
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`${student.name}_Marksheet.pdf`); 
@@ -84,7 +88,6 @@ export default function Marksheet() {
   return (
     <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:block print:py-0 print:bg-white">
       
-      {/* EXTREME 1-PAGE PRINT CSS FIX FOR iOS/SAFARI */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
           @page { size: A4 portrait; margin: 0mm !important; }
@@ -139,7 +142,7 @@ export default function Marksheet() {
         </div>
       </div>
 
-      {/* 🔴 A4 MARKSHEET CANVAS - Added outer padding (p-2) to create a safe zone for the border */}
+      {/* 🔴 A4 MARKSHEET CANVAS */}
       <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
         
         {/* Background Watermark */}
@@ -147,25 +150,22 @@ export default function Marksheet() {
           <img src="/logo.png" alt="Watermark" className="w-[450px] h-[450px] object-contain" />
         </div>
 
-        {/* Main Content Wrapper - Safe inside the padding */}
-        <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border">
+        {/* Main Content Wrapper */}
+        <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
           <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
             
-            {/* 🛠️ HEADER SECTION: Enhanced Font, Bigger Logo, Beautiful Banner */}
+            {/* HEADER SECTION */}
             <div className="flex justify-between items-start mb-3">
-              {/* Bigger Logo */}
               <div className="w-28 h-28 flex items-center justify-center p-1">
                 <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
               </div>
 
-              {/* Enhanced Center Text */}
               <div className="text-center flex-1 px-2">
                 <h1 className="text-[2.2rem] leading-none font-extrabold text-schoolRed uppercase tracking-widest drop-shadow-sm" style={{ fontFamily: 'Georgia, serif' }}>
                   SBS Shiksha Niketan
                 </h1>
                 <p className="font-semibold mt-1 text-[13px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
                 
-                {/* Premium Pill Banner */}
                 <div className="mt-3 mb-2 flex justify-center">
                   <span className="bg-schoolRed text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ring-schoolRed font-bold uppercase tracking-widest text-[11px] shadow-sm">
                     PROGRESS EVALUATION REPORT
@@ -176,7 +176,6 @@ export default function Marksheet() {
                 <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : 7</p>
               </div>
 
-              {/* Adjusted Photo Box */}
               <div className="w-24 h-28 border-[2px] border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
                 <span className="text-3xl mb-1">👤</span>
                 <p className="font-semibold">Student</p><p className="font-semibold">Photo</p>
