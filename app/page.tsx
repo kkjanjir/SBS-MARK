@@ -4,41 +4,33 @@ import { useState } from 'react';
 // Subjects List
 const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 
-// 🛠️ TypeScript Fix: Isko bataya ki marks data kaisa dikhega
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 
 export default function Marksheet() {
-  // 1. Student Details State
   const [student, setStudent] = useState({
     name: "SANJAY KUMAR", roll: "15", mother: "SUNITA DEVI",
     father: "RAMESH KUMAR", dob: "15-08-2012", admission: "2025/104",
   });
 
-  // 2. Marks State 
   const initialMarks: MarksState = {};
   subjectsList.forEach(sub => {
     initialMarks[sub] = { t1: '', t2: '', t3: '' };
   });
   const [marks, setMarks] = useState<MarksState>(initialMarks);
 
-  // Handle Details Change
   const handleDetailChange = (e: any) => {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
   };
 
-  // Handle Marks Change
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
     let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
-    
     if (value !== '') {
       let numVal = Number(value);
-      if (numVal < 0 || numVal > max) return; // Limit check
+      if (numVal < 0 || numVal > max) return; 
     }
-    
     setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
   };
 
-  // Grade Calculator Logic
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
     let perc = (Number(marksObtained) / maxMarks) * 100;
@@ -48,7 +40,6 @@ export default function Marksheet() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
-  // Grand Totals Calculation
   let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
   subjectsList.forEach(sub => {
     gTotalT1 += Number(marks[sub].t1) || 0;
@@ -60,19 +51,30 @@ export default function Marksheet() {
   let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
 
   return (
-    <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:p-0 print:m-0 print:bg-white">
+    // Print me flex center hatakar block kiya taaki top margin zero ho jaye
+    <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:block print:py-0 print:bg-white">
       
-      {/* PERFECT 1-PAGE PRINT CSS FIX */}
+      {/* EXTREME 1-PAGE PRINT CSS FIX FOR iOS/SAFARI */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
-          @page { size: A4; margin: 0; }
-          body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          ::-webkit-scrollbar { display: none; }
+          @page { size: A4 portrait; margin: 0mm !important; }
+          html, body { 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            width: 210mm; 
+            height: 297mm; 
+            overflow: hidden !important; 
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+            background-color: white;
+          }
+          /* Removes default headers/footers in Safari */
+          header, footer { display: none !important; }
         }
       `}} />
 
-      {/* 🟢 DATA ENTRY FORM (Print me hide ho jayega) */}
-      <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden">
+      {/* 🟢 DATA ENTRY FORM */}
+      <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden mx-auto">
         <h2 className="text-xl font-bold text-schoolBlue mb-3 border-b-2 pb-2">1. Student Details</h2>
         <div className="grid grid-cols-3 gap-3 mb-6">
           {['name', 'roll', 'admission', 'father', 'mother', 'dob'].map((field) => (
@@ -89,18 +91,18 @@ export default function Marksheet() {
             <thead className="bg-gray-100 text-xs">
               <tr>
                 <th className="p-2 border text-left">SUBJECT</th>
-                <th className="p-2 border">Term 1 (Out of 40)</th>
-                <th className="p-2 border">Term 2 (Out of 60)</th>
-                <th className="p-2 border">Term 3 (Out of 100)</th>
+                <th className="p-2 border">Term 1 (40)</th>
+                <th className="p-2 border">Term 2 (60)</th>
+                <th className="p-2 border">Term 3 (100)</th>
               </tr>
             </thead>
             <tbody>
               {subjectsList.map(sub => (
                 <tr key={sub}>
                   <td className="p-1 border text-left font-bold text-xs">{sub}</td>
-                  <td className="p-1 border"><input type="number" value={marks[sub].t1} onChange={(e) => handleMarkChange(sub, 't1', e.target.value)} className="w-16 border text-center p-1" /></td>
-                  <td className="p-1 border"><input type="number" value={marks[sub].t2} onChange={(e) => handleMarkChange(sub, 't2', e.target.value)} className="w-16 border text-center p-1" /></td>
-                  <td className="p-1 border"><input type="number" value={marks[sub].t3} onChange={(e) => handleMarkChange(sub, 't3', e.target.value)} className="w-16 border text-center p-1" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t1} onChange={(e) => handleMarkChange(sub, 't1', e.target.value)} className="w-16 border text-center p-1 outline-none focus:bg-blue-50" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t2} onChange={(e) => handleMarkChange(sub, 't2', e.target.value)} className="w-16 border text-center p-1 outline-none focus:bg-blue-50" /></td>
+                  <td className="p-1 border"><input type="number" value={marks[sub].t3} onChange={(e) => handleMarkChange(sub, 't3', e.target.value)} className="w-16 border text-center p-1 outline-none focus:bg-blue-50" /></td>
                 </tr>
               ))}
             </tbody>
@@ -108,42 +110,42 @@ export default function Marksheet() {
         </div>
       </div>
 
-      {/* 🔴 A4 MARKSHEET CANVAS (Fixed 297mm height so it never spills to page 2) */}
-      <div className="w-[210mm] h-[297mm] bg-white relative print:w-[210mm] print:h-[297mm] shadow-2xl print:shadow-none overflow-hidden text-black text-sm box-border">
+      {/* 🔴 A4 MARKSHEET CANVAS (Height reduced strictly to 296mm to prevent page 2) */}
+      <div className="w-[210mm] h-[297mm] bg-white relative print:w-[210mm] print:h-[296mm] print:mx-auto shadow-2xl print:shadow-none overflow-hidden text-black text-sm box-border mx-auto" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
         
         {/* Background Watermark */}
         <div className="absolute inset-0 flex justify-center items-center z-0 opacity-10 pointer-events-none">
           <img src="/logo.png" alt="Watermark" className="w-[400px] h-[400px] object-contain" />
         </div>
 
-        {/* Main Content Wrapper */}
-        <div className="relative z-10 h-full border-[6px] border-schoolRed m-2 p-1 flex flex-col box-border">
-          <div className="border-[2px] border-schoolRed h-full p-4 flex flex-col">
+        {/* Main Content Wrapper - Tightened padding slightly */}
+        <div className="relative z-10 h-full border-[6px] border-schoolRed m-1 p-1 flex flex-col box-border">
+          <div className="border-[2px] border-schoolRed h-full p-3 flex flex-col">
             
             {/* Header Section */}
-            <div className="flex justify-between items-start mb-2">
+            <div className="flex justify-between items-start mb-1">
               <div className="w-24 h-24 flex items-center justify-center">
                 <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
               </div>
               <div className="text-center flex-1 px-2">
                 <h1 className="text-3xl font-bold text-schoolRed uppercase tracking-wider">SBS Shiksha Niketan</h1>
                 <p className="font-semibold mt-1">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
-                <div className="mt-2 flex justify-center">
+                <div className="mt-1 flex justify-center">
                   <span className="border border-schoolRed bg-[#fff9c4] px-4 py-1 font-bold text-schoolRed shadow-sm">
                     PROGRESS EVALUATION REPORT
                   </span>
                 </div>
-                <p className="text-schoolBlue font-bold mt-2 text-md">ACADEMIC SESSION : 2025-26</p>
+                <p className="text-schoolBlue font-bold mt-1 text-md">ACADEMIC SESSION : 2025-26</p>
                 <p className="font-bold text-lg mt-1">CLASS : 7</p>
               </div>
-              <div className="w-20 h-24 border border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
+              <div className="w-20 h-24 border border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs mt-1">
                 <span className="text-2xl mb-1">👤</span>
                 <p>Student</p><p>Photo</p>
               </div>
             </div>
 
             {/* Dynamic Student Details Section */}
-            <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-2 uppercase">
+            <div className="bg-[#e0f7fa] border border-schoolRed p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-1 uppercase">
               <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
               <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
               <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
@@ -155,7 +157,7 @@ export default function Marksheet() {
             </div>
 
             {/* AUTO-CALCULATING ACADEMIC TABLE */}
-            <div className="w-full flex-1 mb-2 flex flex-col">
+            <div className="w-full flex-1 mb-1 flex flex-col">
               <table className="w-full text-center border-collapse text-[11px] font-bold border-[2px] border-schoolRed">
                 <thead>
                   <tr className="bg-[#fae6d1] text-schoolRed border-b-[2px] border-schoolRed">
@@ -192,7 +194,7 @@ export default function Marksheet() {
                         <td className="border-r-[2px] border-schoolRed p-1">100</td>
                         <td className="border-r-[2px] border-schoolRed p-1">{subData.t3}</td>
                         <td className="border-r-[2px] border-schoolRed p-1">200</td>
-                        <td className="border-r-[2px] border-schoolRed p-1">{subTotal > 0 ? subTotal : ''}</td>
+                        <td className="border-r-[2px] border-schoolRed p-1 text-black">{subTotal > 0 ? subTotal : ''}</td>
                         <td className="p-1 text-schoolRed">{subTotal > 0 ? subGrade : ''}</td>
                       </tr>
                     )
@@ -200,11 +202,11 @@ export default function Marksheet() {
                   <tr className="border-b-[2px] border-schoolRed bg-[#e0f7fa]">
                     <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">TOTAL</td>
                     <td className="border-r-[2px] border-schoolRed p-1">320</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">{gTotalT1 > 0 ? gTotalT1 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT1 > 0 ? gTotalT1 : ''}</td>
                     <td className="border-r-[2px] border-schoolRed p-1">480</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">{gTotalT2 > 0 ? gTotalT2 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT2 > 0 ? gTotalT2 : ''}</td>
                     <td className="border-r-[2px] border-schoolRed p-1">800</td>
-                    <td className="border-r-[2px] border-schoolRed p-1">{gTotalT3 > 0 ? gTotalT3 : ''}</td>
+                    <td className="border-r-[2px] border-schoolRed p-1 text-black">{gTotalT3 > 0 ? gTotalT3 : ''}</td>
                     <td className="border-r-[2px] border-schoolRed p-1">1600</td>
                     <td className="border-r-[2px] border-schoolRed p-1 text-black text-sm">{grandTotal > 0 ? grandTotal : ''}</td>
                     <td className="p-1"></td>
@@ -222,7 +224,7 @@ export default function Marksheet() {
             </div>
 
             {/* Co-Scholastic Area & Grade Scale */}
-            <div className="w-full flex flex-col mb-2 mt-auto">
+            <div className="w-full flex flex-col mt-auto">
               <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
                 <tbody>
                   <tr className="border-b-[2px] border-black bg-[#fae6d1]">
@@ -260,7 +262,7 @@ export default function Marksheet() {
             </div>
 
             {/* Signatures Footer */}
-            <div className="flex justify-between items-end px-8 pb-1 font-semibold text-sm">
+            <div className="flex justify-between items-end px-8 pt-3 pb-2 font-semibold text-sm">
               <div className="border-t border-black w-32 text-center pt-1">Date</div>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
               <div className="flex flex-col items-center">
@@ -275,7 +277,10 @@ export default function Marksheet() {
       
       {/* Floating Print Button */}
       <button 
-        onClick={() => window.print()} 
+        onClick={() => {
+          document.title = student.name + " - Marksheet"; 
+          window.print();
+        }} 
         className="fixed bottom-8 right-8 bg-schoolBlue text-white px-6 py-3 rounded-full shadow-2xl font-bold print:hidden hover:bg-blue-800 hover:scale-105 transition-all z-50"
       >
         🖨️ Print Marksheet
