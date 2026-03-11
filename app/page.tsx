@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -47,10 +47,6 @@ export default function MarksheetApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
-  
-  // 🖨️ PRINT STATES
-  const [isPreparingBulk, setIsPreparingBulk] = useState(false);
-  const [printMode, setPrintMode] = useState<'single' | 'bulk'>('single');
 
   const currentYear = new Date().getFullYear();
   const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
@@ -201,27 +197,22 @@ export default function MarksheetApp() {
     resetMarks();
   };
 
-  // 🖨️ PERFECT NATIVE PRINT TRIGGERS
+  // 🖨️ PERFECT SYNCHRONOUS DOM PRINTING
   const triggerSinglePrint = () => {
-    setPrintMode('single');
-    document.title = `${student.name || 'Student'}_Class_${activeClass}_Marksheet`;
-    setTimeout(() => { window.print(); }, 100);
+    document.body.classList.add('print-single');
+    document.title = `${student.name || 'Student'}_Class_${activeClass}`;
+    window.print();
+    document.body.classList.remove('print-single');
   };
 
   const triggerBulkPrint = () => {
     const classStudents = dbStudents.filter(s => s.class_name === activeClass);
-    if (classStudents.length === 0) return alert("No students in this class to download!");
-    setIsPreparingBulk(true);
-    setPrintMode('bulk');
+    if (classStudents.length === 0) return alert("No students in this class to print!");
+    document.body.classList.add('print-bulk');
     document.title = `Class_${activeClass}_All_Marksheets`;
-    // Delay ensures the DOM fully renders the hidden marksheet list before calling print
-    setTimeout(() => { 
-      setIsPreparingBulk(false);
-      window.print(); 
-      setPrintMode('single'); // revert back
-    }, 1000);
+    window.print();
+    document.body.classList.remove('print-bulk');
   };
-
 
   // ==========================================
   // VIEW 1: LOGIN SCREEN 🔒
@@ -245,17 +236,14 @@ export default function MarksheetApp() {
 
           <form onSubmit={handleLogin} className="space-y-5">
             {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
-            
             <div className="relative">
               <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
               <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
             </div>
-            
             <div className="relative">
               <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
               <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
             </div>
-
             <button type="submit" disabled={isLoggingIn} className="w-full bg-schoolBlue hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95">
               {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
             </button>
@@ -274,43 +262,39 @@ export default function MarksheetApp() {
     <>
       {/* 🛑 THE ULTIMATE CSS PRINT ENGINE */}
       <style dangerouslySetInnerHTML={{__html: `
+        @media screen {
+          #print-single-container, #print-bulk-container { display: none !important; }
+        }
         @media print {
           @page { size: A4 portrait; margin: 0 !important; }
           body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           
-          /* Hide all UI elements during print */
-          .app-ui-wrapper { display: none !important; }
+          /* Hide the main app UI entirely when printing */
+          #app-ui { display: none !important; }
           
-          /* Show ONLY the print container */
-          .print-render-container { display: block !important; position: absolute; top: 0; left: 0; width: 100%; background: white; z-index: 9999; }
+          /* Show the correct container based on body class */
+          body.print-single #print-single-container { display: block !important; }
+          body.print-bulk #print-bulk-container { display: block !important; }
           
           /* Strict 1-Page constraint per marksheet */
           .marksheet-page { 
             width: 210mm !important; 
-            height: 296mm !important; /* 1mm buffer so it NEVER spills to page 2 */
+            height: 295mm !important; /* 2mm buffer so it NEVER spills to page 2 */
             overflow: hidden !important; 
-            page-break-after: always; 
-            page-break-inside: avoid;
+            page-break-after: always !important; 
+            page-break-inside: avoid !important;
             margin: 0 auto !important; 
             padding: 0 !important;
             box-sizing: border-box !important;
+            background: white !important;
           }
           /* Remove page break from the very last marksheet so no blank page appears at the end */
           .marksheet-page:last-child { page-break-after: auto !important; }
         }
       `}} />
 
-      {/* 💻 DASHBOARD & WIZARD UI WRAPPER (Hidden when printing) */}
-      <div className="app-ui-wrapper">
-        
-        {isPreparingBulk && (
-          <div className="fixed inset-0 bg-black/80 z-[9999] flex flex-col items-center justify-center text-white backdrop-blur-sm">
-            <Loader2 className="animate-spin mb-4" size={64} />
-            <h2 className="text-2xl font-bold mb-2">Preparing HD Print Engine...</h2>
-            <p className="text-gray-300">Loading {classFilteredStudents.length} marksheets. Please wait.</p>
-          </div>
-        )}
-
+      {/* 💻 MAIN APP UI */}
+      <div id="app-ui">
         {view === 'dashboard' ? (
           <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
             <div className="w-full max-w-5xl">
@@ -517,11 +501,9 @@ export default function MarksheetApp() {
                         </button>
                         <button onClick={()=>saveToCloud(false)} className="w-full bg-schoolBlue text-white p-3 rounded-lg font-bold hover:bg-blue-800 transition-colors">Save & Close</button>
                         
-                        <div className="grid grid-cols-2 gap-2 pt-2 border-t">
-                          <button onClick={triggerSinglePrint} className="bg-gray-800 text-white p-3 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-gray-900"><Printer size={18}/> Print Format</button>
-                          <button onClick={triggerSinglePrint} className="bg-red-600 text-white p-3 rounded-lg font-bold flex justify-center items-center gap-2 hover:bg-red-700"><Download size={18}/> Save PDF</button>
-                        </div>
-                        <p className="text-xs text-gray-500 text-center mt-1 font-semibold">*To Save PDF natively: Tap either button above, then click "Share" icon in the print dialog and choose "Save to Files".</p>
+                        <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 mt-2">
+                           <Printer size={20}/> Print / Save PDF (HD)
+                        </button>
                       </div>
                     </>
                   )}
@@ -533,7 +515,6 @@ export default function MarksheetApp() {
                 </div>
               </div>
 
-              {/* LIVE PREVIEW PANE */}
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto">
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
                   <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
@@ -544,15 +525,15 @@ export default function MarksheetApp() {
         )}
       </div>
 
-      {/* 🖨️ THE PRINT RENDER CONTAINER (Hidden in Browser, Visible to Printer) */}
-      <div className="hidden print-render-container">
-        {printMode === 'single' && (
-          <div className="marksheet-page">
-            <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
-          </div>
-        )}
+      {/* 🖨️ THE PRINT CONTAINERS (Strictly Hidden from UI, Visible to Printer) */}
+      <div id="print-single-container">
+        <div className="marksheet-page">
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+        </div>
+      </div>
 
-        {printMode === 'bulk' && classFilteredStudents.map(s => {
+      <div id="print-bulk-container">
+        {classFilteredStudents.map(s => {
           const calcs = getCalculations(s.marks_data, s.class_name);
           return (
             <div key={s.id} className="marksheet-page">
@@ -585,7 +566,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
   const t = theme || THEMES.classic; 
 
   return (
-    <div className={`w-[210mm] h-[296mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-xl print:shadow-none`}>
+    <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
