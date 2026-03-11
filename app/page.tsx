@@ -1,31 +1,45 @@
 'use client'
 import { useState, useEffect } from 'react';
-// Yahan CloudUpload hata kar Save add kar diya hai 🛠️
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2 } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// 🚀 SUPABASE CONNECTION SETUP
+// 🚀 SUPABASE CONNECTION
 const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
+const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
+
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
+type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
 
 export default function MarksheetApp() {
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [activeClass, setActiveClass] = useState<string>('7'); // Class Folder state
   
-  // Database States
+  // App States
   const [dbStudents, setDbStudents] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
+  const [lastSaved, setLastSaved] = useState('');
 
+  // Form States
   const [student, setStudent] = useState({
-    name: "", roll: "", mother: "", father: "", dob: "", admission: "",
+    name: "", roll: "", mother: "", father: "", dob: "", admission: "", gender: "MALE", address: ""
   });
+  
+  const [extraDetails, setExtraDetails] = useState({
+    attendance: "", remark: "", issueDate: new Date().toISOString().split('T')[0]
+  });
+
+  const [coScholastic, setCoScholastic] = useState<CoScholasticState>({
+    sports: "A", art: "A", music: "A", discipline: "A"
+  });
+
+  const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
 
   const [marks, setMarks] = useState<MarksState>(() => {
     const initial: MarksState = {};
@@ -33,80 +47,80 @@ export default function MarksheetApp() {
     return initial;
   });
 
-  // 📡 FETCH STUDENTS FROM CLOUD
+  // Unique Addresses for Auto-suggest
+  const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
+
+  // 📡 FETCH FROM CLOUD
   const fetchStudentsFromCloud = async () => {
     setIsLoadingList(true);
-    const { data, error } = await supabase
-      .from('marks_records')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
+    const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
     if (data) setDbStudents(data);
     setIsLoadingList(false);
   };
 
-  useEffect(() => {
-    if (view === 'dashboard') {
-      fetchStudentsFromCloud();
-    }
-  }, [view]);
+  useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
 
-  // 💾 SAVE STUDENT TO CLOUD
-  const saveToCloud = async () => {
-    if (!student.name || !student.roll) {
-      alert("Please enter at least Student Name and Roll No before saving!");
-      return;
+  // 📸 PHOTO UPLOAD HANDLER (Local Preview)
+  const handlePhotoUpload = (e: any) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setStudentPhoto(reader.result as string);
+      reader.readAsDataURL(file);
     }
+  };
+
+  // 💾 SAVE & NEXT LOGIC
+  const saveToCloud = async (addNext: boolean = false) => {
+    if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     setIsSaving(true);
-    const { data, error } = await supabase
-      .from('marks_records')
-      .insert([
-        { 
-          student_name: student.name, 
-          roll_no: student.roll, 
-          student_data: student, 
-          marks_data: marks 
-        }
-      ]);
+    
+    // Auto-calculate rank helper
+    let myTotal = calculateGrandTotal(marks);
+    
+    const { data, error } = await supabase.from('marks_records').insert([
+      { 
+        student_name: student.name, 
+        roll_no: student.roll,
+        class_name: activeClass,
+        student_data: { ...student, photo: studentPhoto }, 
+        marks_data: marks,
+        extra_data: { ...extraDetails, coScholastic, total: myTotal }
+      }
+    ]);
 
     setIsSaving(false);
-    if (error) {
-      alert("Save failed! Error: " + error.message);
-    } else {
-      alert("🎉 Student saved successfully to Cloud!");
-      setView('dashboard');
-      resetForm();
+    if (error) { alert("Save failed! " + error.message); } 
+    else {
+      setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
+      if (addNext) {
+        // Increment Roll No intelligently
+        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
+        setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
+        resetMarks();
+        setStep(1);
+        setTimeout(() => setLastSaved(''), 4000);
+      } else {
+        setView('dashboard');
+        resetMarks();
+      }
     }
   };
 
-  // ✏️ EDIT SAVED STUDENT
-  const editStudent = (record: any) => {
-    setStudent(record.student_data);
-    setMarks(record.marks_data);
-    setStep(1);
-    setView('editor');
-  };
-
-  const handleDetailChange = (e: any) => {
-    setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
-  };
-
-  const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
-    let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
-    if (value !== '') {
-      let numVal = Number(value);
-      if (numVal < 0 || numVal > max) return; 
-    }
-    setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
-  };
-
-  const resetForm = () => {
-    setStudent({ name: "", roll: "", mother: "", father: "", dob: "", admission: "" });
+  const resetMarks = () => {
     const initial: MarksState = {};
     subjectsList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
-    setStep(1);
-    setView('editor');
+    setExtraDetails({ attendance: "", remark: "", issueDate: new Date().toISOString().split('T')[0] });
+    setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
+    setStudentPhoto(null);
+  };
+
+  // --- CALCULATIONS ---
+  const calculateGrandTotal = (m: MarksState) => {
+    let total = 0;
+    subjectsList.forEach(sub => { total += (Number(m[sub]?.t1)||0) + (Number(m[sub]?.t2)||0) + (Number(m[sub]?.t3)||0); });
+    return total;
   };
 
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
@@ -118,118 +132,79 @@ export default function MarksheetApp() {
     if (perc >= 33) return 'D';  return 'E';
   };
 
-  const triggerPrint = () => {
-    document.title = `${student.name || 'Student'}_Marksheet`; 
-    window.print();
-  };
-
-  const handleDownloadPDF = async () => {
-    setIsDownloading(true);
-    window.scrollTo(0, 0); 
-    const element = document.getElementById('marksheet-template');
-    if (element) {
-      try {
-        const html2canvas = (await import('html2canvas')).default;
-        const { jsPDF } = await import('jspdf');
-        const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4'); 
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${student.name || 'Student'}_Marksheet.pdf`); 
-      } catch (error) {
-        alert("PDF Error!");
-      }
-    }
-    setIsDownloading(false);
-  };
-
-  let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
-  subjectsList.forEach(sub => {
-    gTotalT1 += Number(marks[sub]?.t1) || 0;
-    gTotalT2 += Number(marks[sub]?.t2) || 0;
-    gTotalT3 += Number(marks[sub]?.t3) || 0;
-  });
-  grandTotal = gTotalT1 + gTotalT2 + gTotalT3;
+  let grandTotal = calculateGrandTotal(marks);
   let percentage = grandTotal > 0 ? ((grandTotal / 1600) * 100).toFixed(1) : "0";
   let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
 
+  // 🏆 DYNAMIC RANK CALCULATION
+  const getDynamicRank = () => {
+    if (grandTotal === 0) return "";
+    // Get all students of this class from DB
+    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+    let allTotals = classStudents.map(s => s.extra_data?.total || 0);
+    allTotals.push(grandTotal); // Include current student
+    allTotals.sort((a, b) => b - a); // Sort descending
+    // Find rank (1-based index)
+    const rank = allTotals.indexOf(grandTotal) + 1;
+    return rank > 0 ? `${rank}` : "";
+  };
+
+
   // ==========================================
-  // VIEW 1: DASHBOARD (Cloud Connected)
+  // VIEW 1: DASHBOARD
   // ==========================================
   if (view === 'dashboard') {
+    const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
-        <div className="w-full max-w-4xl">
-          <div className="flex justify-between items-center mb-10">
+        <div className="w-full max-w-5xl">
+          <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-extrabold text-schoolRed">EduPrime SMS</h1>
-              <p className="text-gray-500 font-medium">Marksheet Generator Pro <span className="text-green-600 text-xs font-bold ml-2 px-2 py-1 bg-green-100 rounded-full">Cloud Active ☁️</span></p>
+              <p className="text-gray-500 font-medium">Marksheet ERP System</p>
             </div>
-            <div className="h-12 w-12 bg-schoolBlue text-white rounded-full flex items-center justify-center text-xl font-bold shadow-md">
-              A
-            </div>
+          </div>
+
+          {/* Class Folders */}
+          <div className="mb-8 flex gap-3 overflow-x-auto pb-2">
+            {['5', '6', '7', '8', '9', '10'].map(cls => (
+              <button 
+                key={cls} onClick={() => setActiveClass(cls)}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm whitespace-nowrap ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}
+              >
+                <Folder size={18} className={activeClass === cls ? "text-yellow-300" : "text-gray-400"}/> Class {cls}
+              </button>
+            ))}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
-              <input 
-                type="text" 
-                placeholder="Search students by name or roll no..." 
-                className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-schoolBlue outline-none shadow-sm transition-all"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+              <input type="text" placeholder={`Search in Class ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
-            <button 
-              onClick={resetForm}
-              className="bg-schoolBlue text-white px-6 py-3 rounded-xl shadow-lg font-bold flex items-center justify-center gap-2 hover:bg-blue-800 transition-all active:scale-95"
-            >
-              <Plus size={20} /> New Marksheet
+            <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg">
+              <Plus size={20} /> Add to Class {activeClass}
             </button>
           </div>
 
+          {/* Student List */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-              <h3 className="font-bold text-gray-700 flex items-center gap-2"><FileText size={18}/> Cloud Database</h3>
-              <button onClick={fetchStudentsFromCloud} className="text-sm text-schoolBlue font-semibold hover:underline">Refresh</button>
-            </div>
-            
+            <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: Class {activeClass}</h3></div>
             <div className="divide-y divide-gray-100 min-h-[200px]">
-              {isLoadingList ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                  <Loader2 className="animate-spin mb-2" size={32} />
-                  <p>Loading records from cloud...</p>
-                </div>
-              ) : (
-                <>
-                  {dbStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase()) || s.roll_no.includes(searchQuery)).map((studentData) => (
-                    <div key={studentData.id} className="p-6 flex items-center justify-between hover:bg-blue-50/50 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">
-                          {studentData.student_name.charAt(0)}
-                        </div>
-                        <div>
-                          <h4 className="font-bold text-gray-800">{studentData.student_name}</h4>
-                          <p className="text-xs font-medium text-gray-500">Roll: {studentData.roll_no} • Saved on: {new Date(studentData.created_at).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                      <button onClick={() => editStudent(studentData)} className="text-schoolBlue hover:text-schoolRed bg-white border shadow-sm p-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all">
-                        <Edit size={16}/> Open
-                      </button>
+              {isLoadingList ? <div className="p-10 text-center text-gray-400">Loading...</div> : 
+                classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty.</div> :
+                classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
+                  <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
+                    setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
+                  }}>
+                    <div className="flex items-center gap-4">
+                      {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
+                      <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
                     </div>
-                  ))}
-                  {dbStudents.length === 0 && (
-                    <div className="py-12 text-center text-gray-500 flex flex-col items-center">
-                      <Save size={48} className="text-gray-300 mb-3" />
-                      <p className="font-bold text-lg">No records found!</p>
-                      <p className="text-sm">Create a new marksheet and save it to see it here.</p>
-                    </div>
-                  )}
-                </>
-              )}
+                    <ChevronRight className="text-gray-400" />
+                  </div>
+                ))
+              }
             </div>
           </div>
         </div>
@@ -242,181 +217,160 @@ export default function MarksheetApp() {
   // ==========================================
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans print:bg-white overflow-x-hidden">
-      
-      <style dangerouslySetInnerHTML={{__html: `
-        @media print {
-          @page { size: A4 portrait; margin: 0; }
-          html, body { width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
-          .no-print { display: none !important; }
-          #marksheet-template { transform: scale(1) !important; margin: 0 !important; transform-origin: top left !important; }
-        }
-      `}} />
+      <style dangerouslySetInnerHTML={{__html: `@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-print-color-adjust: exact !important; background: white !important; } .no-print { display: none !important; } }`}} />
 
-      <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print sticky top-0 z-50">
-        <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-gray-600 hover:text-schoolBlue font-bold transition-colors">
-          <Home size={20} /> Back to Dashboard
-        </button>
+      <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print">
+        <button onClick={() => setView('dashboard')} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
+        <span className="font-bold text-schoolBlue">Editing: Class {activeClass}</span>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row w-full no-print">
-        
-        <div className="w-full lg:w-[45%] bg-white p-6 lg:p-10 border-r border-gray-200 overflow-y-auto no-print shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
+        <div className="w-full lg:w-[45%] bg-white p-6 border-r overflow-y-auto no-print h-[calc(100vh-60px)]">
           
-          <div className="flex justify-between items-center mb-8 relative">
-            <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2 rounded-full"></div>
-            <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2 rounded-full transition-all duration-300" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
+          {/* Last Saved Toast */}
+          {lastSaved && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded-lg text-sm font-bold text-center animate-pulse">{lastSaved}</div>}
+
+          {/* Stepper */}
+          <div className="flex justify-between items-center mb-6 relative">
+            <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2"></div>
+            <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
             {[1, 2, 3, 4, 5].map((s) => (
-              <div key={s} onClick={() => setStep(s)} className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm cursor-pointer transition-all ${step === s ? 'bg-schoolBlue text-white ring-4 ring-blue-100' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border-2 border-gray-200'}`}>
-                {s === 5 ? <Printer size={18}/> : s}
-              </div>
+              <div key={s} onClick={() => setStep(s)} className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer ${step === s ? 'bg-schoolBlue text-white ring-2 ring-offset-2 ring-schoolBlue' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border'}`}>{s}</div>
             ))}
           </div>
 
-          <h2 className="text-2xl font-extrabold text-gray-800 mb-6">
-            {step === 1 && "🎓 Student Details"}
-            {step === 2 && "📝 Term 1 Marks (Out of 40)"}
-            {step === 3 && "📝 Term 2 Marks (Out of 60)"}
-            {step === 4 && "📝 Term 3 Marks (Out of 100)"}
-            {step === 5 && "🎉 Final Review & Save"}
-          </h2>
+          {/* WIZARD CONTENT */}
+          <div className="space-y-4">
+            {step === 1 && (
+              <>
+                <h2 className="text-xl font-bold mb-4">1. Details & Photo</h2>
+                <div className="flex items-center gap-4 mb-4">
+                  <label className="cursor-pointer">
+                    <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative">
+                      {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
+                      <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
+                    </div>
+                  </label>
+                  <div className="flex-1 grid grid-cols-2 gap-3">
+                    <div><label className="text-xs font-bold">Name</label><input type="text" name="name" value={student.name} onChange={(e)=>setStudent({...student, name: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
+                    <div><label className="text-xs font-bold">Roll No (Editable)</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-bold">Gender</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border p-2 rounded"><option>MALE</option><option>FEMALE</option></select></div>
+                  <div><label className="text-xs font-bold">DOB (Smart Calendar)</label><input type="date" name="dob" value={student.dob} max="2020-12-31" min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border p-2 rounded uppercase" /></div>
+                  <div><label className="text-xs font-bold">Father</label><input type="text" name="father" value={student.father} onChange={(e)=>setStudent({...student, father: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
+                  <div><label className="text-xs font-bold">Mother</label><input type="text" name="mother" value={student.mother} onChange={(e)=>setStudent({...student, mother: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" /></div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold">Address (Auto-Suggest)</label>
+                    <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border p-2 rounded" />
+                    <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
+                  </div>
+                </div>
+              </>
+            )}
 
-          {step === 1 && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {['name', 'roll', 'admission', 'father', 'mother', 'dob'].map((field) => (
-                  <div key={field}>
-                    <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">{field}</label>
-                    <input type="text" name={field} value={student[field as keyof typeof student]} onChange={handleDetailChange} placeholder={`Enter ${field}`} className="w-full border-2 border-gray-200 bg-gray-50 p-3 rounded-xl font-bold text-sm outline-none focus:border-schoolBlue focus:bg-white transition-all" />
+            {[2, 3, 4].includes(step) && (
+              <>
+                <h2 className="text-xl font-bold mb-4">Term {step-1} Marks</h2>
+                {subjectsList.map(sub => (
+                  <div key={sub} className="flex justify-between items-center bg-gray-50 p-2 rounded border mb-2">
+                    <span className="font-bold text-xs">{sub}</span>
+                    <input type="number" value={marks[sub][step===2?'t1':step===3?'t2':'t3']} onChange={(e) => handleMarkChange(sub, step===2?'t1':step===3?'t2':'t3', e.target.value)} className="w-16 border p-1 rounded text-center font-bold" />
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
+              </>
+            )}
 
-          {[2, 3, 4].includes(step) && (
-            <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-300">
-              {subjectsList.map((sub) => {
-                const term = step === 2 ? 't1' : step === 3 ? 't2' : 't3';
-                const max = step === 2 ? 40 : step === 3 ? 60 : 100;
-                return (
-                  <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-schoolBlue/30 transition-all">
-                    <span className="font-bold text-gray-700 text-sm">{sub}</span>
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="number" 
-                        value={marks[sub][term]} 
-                        onChange={(e) => handleMarkChange(sub, term, e.target.value)} 
-                        placeholder="0"
-                        className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50 transition-all" 
-                      />
-                      <span className="text-xs font-bold text-gray-400">/ {max}</span>
+            {step === 5 && (
+              <>
+                <h2 className="text-xl font-bold mb-4">Final Touches</h2>
+                <div className="grid grid-cols-2 gap-3 mb-4 border p-4 rounded-xl bg-gray-50">
+                  {['sports', 'art', 'music', 'discipline'].map(item => (
+                    <div key={item}>
+                      <label className="text-xs font-bold capitalize">{item}</label>
+                      <select value={coScholastic[item as keyof CoScholasticState]} onChange={(e)=>setCoScholastic({...coScholastic, [item]: e.target.value})} className="w-full border p-2 rounded bg-white">
+                        <option value="A+">A+ (Outstanding)</option><option value="A">A (Excellent)</option>
+                        <option value="B+">B+ (Very Good)</option><option value="B">B (Good)</option><option value="C">C (Average)</option>
+                      </select>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {step === 5 && (
-            <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
-              <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center">
-                <Save className="mx-auto text-schoolBlue mb-3" size={48} />
-                <h3 className="text-xl font-bold text-schoolBlue mb-1">Marksheet Ready!</h3>
-                <p className="text-sm font-medium text-gray-600 mb-6">Save this record to the cloud database before printing.</p>
-                
-                <div className="flex flex-col gap-3">
-                  <button onClick={saveToCloud} disabled={isSaving} className={`w-full text-white px-6 py-4 rounded-xl shadow-lg font-bold transition-all flex items-center justify-center gap-2 text-lg ${isSaving ? 'bg-blue-400' : 'bg-schoolBlue hover:bg-blue-800 hover:scale-[1.02]'}`}>
-                    {isSaving ? <><Loader2 className="animate-spin" size={20}/> Saving to Cloud...</> : <><Save size={20} /> Save to Database</>}
-                  </button>
-                  <button onClick={triggerPrint} className="w-full bg-gray-800 text-white px-6 py-4 rounded-xl shadow-lg font-bold hover:scale-[1.02] transition-all flex items-center justify-center gap-2 text-lg">
-                    <Printer size={20} /> Print Directly
-                  </button>
+                  ))}
                 </div>
-              </div>
-            </div>
-          )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-bold">Attendance (e.g. 210/220)</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  <div><label className="text-xs font-bold">Issue Date</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold">Remarks Dropdown</label>
+                    <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border p-2 rounded" placeholder="Type or select..." />
+                    <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
+                  </div>
+                </div>
 
-          <div className="mt-10 flex justify-between pt-6 border-t border-gray-100">
-            <button 
-              onClick={() => setStep(s => Math.max(1, s - 1))} 
-              disabled={step === 1}
-              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all ${step === 1 ? 'text-gray-300 bg-gray-50' : 'text-gray-600 bg-white border-2 border-gray-200 hover:bg-gray-50 active:scale-95'}`}
-            >
-              <ChevronLeft size={20}/> Back
-            </button>
-            <button 
-              onClick={() => setStep(s => Math.min(5, s + 1))} 
-              disabled={step === 5}
-              className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md active:scale-95 ${step === 5 ? 'text-white bg-gray-300 shadow-none' : 'text-white bg-schoolBlue hover:bg-blue-800'}`}
-            >
-              Next <ChevronRight size={20}/>
-            </button>
+                <div className="mt-8 space-y-3">
+                  <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700">
+                    {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next Student
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={()=>saveToCloud(false)} className="bg-schoolBlue text-white p-3 rounded-lg font-bold">Save & Close</button>
+                    <button onClick={() => { document.title = student.name; window.print(); }} className="bg-gray-800 text-white p-3 rounded-lg font-bold flex justify-center gap-2"><Printer size={18}/> Print</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
+          <div className="mt-8 flex justify-between">
+            <button onClick={() => setStep(s => Math.max(1, s - 1))} className="px-4 py-2 border rounded font-bold">Back</button>
+            {step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-6 py-2 bg-schoolBlue text-white rounded font-bold">Next</button>}
+          </div>
         </div>
 
-        <div className="w-full lg:w-[55%] bg-gray-800 lg:p-8 flex items-start justify-center overflow-auto relative no-print">
-          <div className="absolute top-4 right-4 bg-black/50 text-white px-4 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm z-20">
-            Live Preview
-          </div>
-          <div className="lg:origin-top lg:scale-[0.75] xl:scale-[0.85] transition-transform duration-300 flex justify-center w-full">
-            <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} gTotalT1={gTotalT1} gTotalT2={gTotalT2} gTotalT3={gTotalT3} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} />
+        {/* LIVE PREVIEW PANE */}
+        <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto no-print">
+          <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
+            <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
           </div>
         </div>
       </div>
-
-      <div className="hidden print:block w-[210mm] h-[296mm] mx-auto overflow-hidden">
-        <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} gTotalT1={gTotalT1} gTotalT2={gTotalT2} gTotalT3={gTotalT3} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} />
-      </div>
-
     </div>
   )
 }
 
-function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, gTotalT3, grandTotal, percentage, finalGrade }: any) {
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return '';
-    let perc = (Number(marksObtained) / maxMarks) * 100;
-    if (perc >= 91) return 'A1'; if (perc >= 81) return 'A2';
-    if (perc >= 71) return 'B1'; if (perc >= 61) return 'B2';
-    if (perc >= 51) return 'C1'; if (perc >= 41) return 'C2';
-    if (perc >= 33) return 'D';  return 'E';
+// ==========================================
+// MARKSHEET TEMPLATE (Smart Colors & Data)
+// ==========================================
+function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+  const getGrade = (m: number | string, max: number) => {
+    if (m === '') return '';
+    let p = (Number(m) / max) * 100;
+    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
+  };
+
+  // Helper formatting for Date
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
   };
 
   return (
     <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
-      
-      <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none">
-        <img src="/logo.png" alt="Watermark" className="w-[450px] h-[450px] object-contain" />
-      </div>
-
+      <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
         <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
           
           <div className="flex justify-between items-start mb-3">
-            <div className="w-28 h-28 flex items-center justify-center p-1">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
-            </div>
-
+            <div className="w-28 h-28 p-1"><img src="/logo.png" className="w-full h-full object-contain" /></div>
             <div className="text-center flex-1 px-2">
-              <h1 className="text-[2.2rem] leading-none font-extrabold text-schoolRed uppercase tracking-widest drop-shadow-sm" style={{ fontFamily: 'Georgia, serif' }}>
-                SBS Shiksha Niketan
-              </h1>
+              <h1 className="text-[2.2rem] leading-none font-extrabold text-schoolRed uppercase tracking-widest" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
               <p className="font-semibold mt-1 text-[13px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
-              
-              <div className="mt-3 mb-2 flex justify-center">
-                <span className="bg-schoolRed text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ring-schoolRed font-bold uppercase tracking-widest text-[11px] shadow-sm">
-                  PROGRESS EVALUATION REPORT
-                </span>
-              </div>
-
+              <div className="mt-3 mb-2 flex justify-center"><span className="bg-schoolRed text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ring-schoolRed font-bold uppercase text-[11px]">PROGRESS EVALUATION REPORT</span></div>
               <p className="text-schoolBlue font-extrabold mt-3 text-sm tracking-wide">ACADEMIC SESSION : 2025-26</p>
-              <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : 7</p>
+              <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : {activeClass}</p>
             </div>
-
-            <div className="w-24 h-28 border-[2px] border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
-              <span className="text-3xl mb-1">👤</span>
-              <p className="font-semibold">Student</p><p className="font-semibold">Photo</p>
+            <div className="w-24 h-28 border-[2px] border-gray-400 flex items-center justify-center bg-gray-50 overflow-hidden">
+              {photo ? <img src={photo} className="w-full h-full object-cover"/> : <span className="text-gray-400 text-xs text-center font-bold px-2">Upload Photo</span>}
             </div>
           </div>
 
@@ -426,9 +380,9 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
             <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
             <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: {student.admission}</span></div>
             <div className="flex"><span className="w-36">FATHER'S NAME</span><span>: {student.father}</span></div>
-            <div className="flex"><span className="w-32">DATE OF BIRTH</span><span>: {student.dob}</span></div>
-            <div className="flex"><span className="w-36">GENDER</span><span>: MALE</span></div>
-            <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: GHAZIPUR, UP</span></div>
+            <div className="flex"><span className="w-32">DATE OF BIRTH</span><span>: {formatDate(student.dob)}</span></div>
+            <div className="flex"><span className="w-36">GENDER</span><span>: {student.gender}</span></div>
+            <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: {student.address}</span></div>
           </div>
 
           <div className="w-full flex-1 mb-3 flex flex-col">
@@ -436,63 +390,33 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
               <thead>
                 <tr className="bg-[#fae6d1] text-schoolRed border-b-[2px] border-schoolRed">
                   <th rowSpan={2} className="border-r-[2px] border-schoolRed p-1 text-left uppercase">Subjects</th>
-                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">First Term (40)</th>
-                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Second Term (60)</th>
-                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Third Term (100)</th>
+                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Term 1 (40)</th>
+                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Term 2 (60)</th>
+                  <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Term 3 (100)</th>
                   <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Grand Total</th>
                   <th rowSpan={2} className="p-1 uppercase">Grade</th>
                 </tr>
                 <tr className="bg-[#fae6d1] text-schoolBlue border-b-[2px] border-schoolRed text-[10px]">
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
-                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">TOTAL</th>
+                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th><th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">OBT</th>
+                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th><th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">OBT</th>
+                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th><th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">OBT</th>
+                  <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th><th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">TOT</th>
                 </tr>
               </thead>
               <tbody className="text-schoolBlue">
                 {subjectsList.map((sub: string, i: number) => {
-                  let subData = marks[sub];
-                  let subTotal = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
-                  let subGrade = getGrade(subTotal, 200);
+                  let subData = marks[sub]; let tot = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
                   return (
                     <tr key={i} className="border-b-[2px] border-schoolRed">
                       <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">{sub}</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">40</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t1}</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">60</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t2}</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">100</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">{subData.t3}</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5">200</td>
-                      <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{subTotal > 0 ? subTotal : ''}</td>
-                      <td className="p-1.5 text-schoolRed">{subTotal > 0 ? subGrade : ''}</td>
+                      <td className="border-r-[2px] border-schoolRed p-1.5">40</td><td className="border-r-[2px] border-schoolRed p-1.5">{subData.t1}</td>
+                      <td className="border-r-[2px] border-schoolRed p-1.5">60</td><td className="border-r-[2px] border-schoolRed p-1.5">{subData.t2}</td>
+                      <td className="border-r-[2px] border-schoolRed p-1.5">100</td><td className="border-r-[2px] border-schoolRed p-1.5">{subData.t3}</td>
+                      <td className="border-r-[2px] border-schoolRed p-1.5">200</td><td className="border-r-[2px] border-schoolRed p-1.5 text-black">{tot > 0 ? tot : ''}</td>
+                      <td className="p-1.5 text-schoolRed">{tot > 0 ? getGrade(tot, 200) : ''}</td>
                     </tr>
                   )
                 })}
-                <tr className="border-b-[2px] border-schoolRed bg-[#e0f7fa]">
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">TOTAL</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5">320</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT1 > 0 ? gTotalT1 : ''}</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5">480</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT2 > 0 ? gTotalT2 : ''}</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5">800</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-black">{gTotalT3 > 0 ? gTotalT3 : ''}</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5">1600</td>
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-black text-sm">{grandTotal > 0 ? grandTotal : ''}</td>
-                  <td className="p-1.5"></td>
-                </tr>
-                <tr className="bg-[#e0f7fa]">
-                  <td className="border-r-[2px] border-schoolRed p-1.5 text-left text-black">PERCENTAGE</td>
-                  <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
-                  <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
-                  <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black">{percentage}%</td>
-                  <td colSpan={2} className="border-r-[2px] border-schoolRed p-1.5 text-black text-sm">{percentage}%</td>
-                  <td className="p-1.5 text-schoolBlue text-sm">{finalGrade}</td>
-                </tr>
               </tbody>
             </table>
           </div>
@@ -505,40 +429,46 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
                   <td colSpan={6} className="text-right p-1 text-[9px] font-normal text-schoolBlue">A+: Outstanding A: Excellent B+: Very Good B: Good C: Average</td>
                 </tr>
                 <tr>
-                  <td className="p-1 border-r border-black text-left w-24">Sports & Games</td><td className="p-1 border-r-[2px] border-black w-10"></td>
-                  <td className="p-1 border-r border-black text-left w-24">Art & Craft</td><td className="p-1 border-r-[2px] border-black w-10"></td>
-                  <td className="p-1 border-r border-black text-left w-24">Music & Dance</td><td className="p-1 border-r-[2px] border-black w-10"></td>
-                  <td className="p-1 border-r border-black text-left w-24">Discipline</td><td className="p-1 border-black w-10"></td>
+                  <td className="p-1 border-r border-black text-left w-24">Sports & Games</td><td className="p-1 border-r-[2px] border-black w-10 text-schoolRed text-xs">{coScholastic.sports}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Art & Craft</td><td className="p-1 border-r-[2px] border-black w-10 text-schoolRed text-xs">{coScholastic.art}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Music & Dance</td><td className="p-1 border-r-[2px] border-black w-10 text-schoolRed text-xs">{coScholastic.music}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Discipline</td><td className="p-1 border-black w-10 text-schoolRed text-xs">{coScholastic.discipline}</td>
                 </tr>
               </tbody>
             </table>
-            <table className="w-full text-[10px] border-[2px] border-black text-center font-bold text-white">
+            
+            {/* DYNAMIC COLOR GRADE SCALE */}
+            <table className="w-full text-[10px] border-[2px] border-black text-center font-bold">
               <tbody>
                 <tr>
-                  <td className="bg-black p-1 border-r border-white w-20 leading-tight">GRADE<br/>SCALE</td>
-                  <td className="bg-gray-400 p-1 border-r border-white text-black leading-tight">91-100<br/>A1</td>
-                  <td className="bg-gray-300 p-1 border-r border-white text-black leading-tight">81-90<br/>A2</td>
-                  <td className="bg-gray-200 p-1 border-r border-white text-black leading-tight">71-80<br/>B1</td>
-                  <td className="bg-gray-100 p-1 border-r border-white text-black leading-tight">61-70<br/>B2</td>
-                  <td className="bg-gray-200 p-1 border-r border-white text-black leading-tight">51-60<br/>C1</td>
-                  <td className="bg-gray-300 p-1 border-r border-white text-black leading-tight">41-50<br/>C2</td>
-                  <td className="bg-gray-400 p-1 border-r border-white text-black leading-tight">33-40<br/>D</td>
-                  <td className="bg-schoolRed p-1 leading-tight">00-32<br/>E</td>
+                  <td className="bg-black text-white p-1 border-r border-white w-20 leading-tight">GRADE<br/>SCALE</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='A1'?'bg-green-600 text-white':'bg-gray-200 text-black'}`}>91-100<br/>A1</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='A2'?'bg-green-500 text-white':'bg-gray-100 text-black'}`}>81-90<br/>A2</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='B1'?'bg-blue-500 text-white':'bg-gray-200 text-black'}`}>71-80<br/>B1</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='B2'?'bg-blue-400 text-white':'bg-gray-100 text-black'}`}>61-70<br/>B2</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='C1'?'bg-yellow-500 text-white':'bg-gray-200 text-black'}`}>51-60<br/>C1</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='C2'?'bg-yellow-400 text-white':'bg-gray-100 text-black'}`}>41-50<br/>C2</td>
+                  <td className={`p-1 border-r border-white leading-tight transition-colors ${finalGrade==='D'?'bg-orange-500 text-white':'bg-gray-200 text-black'}`}>33-40<br/>D</td>
+                  <td className={`p-1 leading-tight transition-colors ${finalGrade==='E'?'bg-red-600 text-white':'bg-gray-100 text-black'}`}>00-32<br/>E</td>
                 </tr>
               </tbody>
             </table>
+            
             <div className="flex justify-between text-[11px] font-bold mt-5 text-schoolBlue">
-              <div>Remark : <span className="border-b border-black inline-block w-64"></span></div>
-              <div>Attendance : <span className="border-b border-black inline-block w-20"></span></div>
-              <div>Class Rank : <span className="border-b border-black inline-block w-20"></span></div>
+              <div>Remark : <span className="border-b border-black inline-block min-w-[200px] text-schoolRed uppercase px-2">{extra.remark}</span></div>
+              <div>Attendance : <span className="border-b border-black inline-block min-w-[60px] text-center text-schoolRed px-2">{extra.attendance}</span></div>
+              <div>Class Rank : <span className="border-b border-black inline-block min-w-[60px] text-center text-schoolRed px-2 text-sm">{rank}</span></div>
             </div>
           </div>
 
           <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm">
-            <div className="border-t border-black w-32 text-center pt-1">Date</div>
-            <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
+            <div className="border-t border-black w-32 text-center pt-1">{formatDate(extra.issueDate)}</div>
             <div className="flex flex-col items-center">
-              <img src="/principal_sign.png" alt="Signature" className="h-[70px] mb-1 object-contain" />
+              <img src="/class_teacher_sign.png" alt="" className="h-[40px] mb-1 object-contain" onError={(e)=>e.currentTarget.style.display='none'}/>
+              <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
+            </div>
+            <div className="flex flex-col items-center">
+              <img src="/principal_sign.png" alt="" className="h-[70px] mb-1 object-contain" />
               <div className="border-t border-black w-32 text-center pt-1">Principal</div>
             </div>
           </div>
