@@ -20,11 +20,15 @@ export default function Marksheet() {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
   };
 
-  // Handle Marks Change (With logic to prevent entering marks more than maximum)
+  // Handle Marks Change (TypeScript Fix Applied Here 🛠️)
   const handleMarkChange = (sub: string, term: string, value: string) => {
     let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
-    let numVal = value === '' ? '' : Number(value);
-    if (numVal !== '' && (numVal < 0 || numVal > max)) return; // Rok deta hai agar marks limit se zyada ho
+    
+    if (value !== '') {
+      let numVal = Number(value);
+      if (numVal < 0 || numVal > max) return; // Rok deta hai agar marks limit se zyada ho
+    }
+    
     setMarks(prev => ({ ...prev, [sub]: { ...prev[sub], [term]: value } }));
   };
 
@@ -266,7 +270,7 @@ export default function Marksheet() {
       {/* Floating Print Button */}
       <button 
         onClick={() => window.print()} 
-        className="fixed bottom-8 right-8 bg-schoolBlue text-white px-6 py-3 rounded-full shadow-2xl font-bold print:hidden hover:bg-blue-800 hover:scale-105 transition-all"
+        className="fixed bottom-8 right-8 bg-schoolBlue text-white px-6 py-3 rounded-full shadow-2xl font-bold print:hidden hover:bg-blue-800 hover:scale-105 transition-all z-50"
       >
         🖨️ Print Marksheet
       </button>
