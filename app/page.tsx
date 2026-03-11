@@ -233,8 +233,8 @@ export default function Marksheet() {
               </table>
             </div>
 
-            {/* Co-Scholastic Area & Grade Scale */}
-            <div className="w-full flex flex-col mt-auto mb-2">
+            {/* Co-Scholastic Area & Grade Scale (Moved Up with mb-5) */}
+            <div className="w-full flex flex-col mt-auto mb-5">
               <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
                 <tbody>
                   <tr className="border-b-[2px] border-black bg-[#fae6d1]">
@@ -271,12 +271,12 @@ export default function Marksheet() {
               </div>
             </div>
 
-            {/* Signatures Footer */}
-            <div className="flex justify-between items-end px-8 pt-2 pb-1 font-semibold text-sm">
+            {/* Signatures Footer (Signature Image 1.75x Bigger) */}
+            <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm">
               <div className="border-t border-black w-32 text-center pt-1">Date</div>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
               <div className="flex flex-col items-center">
-                <img src="/principal_sign.png" alt="Signature" className="h-10 mb-1 object-contain" />
+                <img src="/principal_sign.png" alt="Signature" className="h-[70px] mb-1 object-contain" />
                 <div className="border-t border-black w-32 text-center pt-1">Principal</div>
               </div>
             </div>
