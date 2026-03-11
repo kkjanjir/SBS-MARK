@@ -13,7 +13,7 @@ export default function Marksheet() {
         </div>
 
         {/* Main Content Wrapper */}
-        <div className="relative z-10 h-full border-[6px] border-schoolRed m-2 p-1">
+        <div className="relative z-10 h-full border-[6px] border-schoolRed m-2 p-1 flex flex-col">
           <div className="border-[2px] border-schoolRed h-full p-4 flex flex-col">
             
             {/* Header Section */}
@@ -41,8 +41,8 @@ export default function Marksheet() {
               </div>
             </div>
 
-            {/* Student Details Section (Fix Applied Here) */}
-            <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-4">
+            {/* Student Details Section */}
+            <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-2">
               <div className="flex"><span className="w-36">STUDENT&apos;S NAME</span><span>: SANJAY KUMAR</span></div>
               <div className="flex"><span className="w-32">ROLL NO.</span><span>: 15</span></div>
               <div className="flex"><span className="w-36">MOTHER&apos;S NAME</span><span>: SUNITA DEVI</span></div>
@@ -53,13 +53,112 @@ export default function Marksheet() {
               <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: GHAZIPUR, UP</span></div>
             </div>
 
-            {/* Table Area Placeholder */}
-            <div className="flex-1 border border-schoolRed flex items-center justify-center bg-gray-50">
-               <p className="text-gray-400 font-bold">Marks Table yahan aayega</p>
+            {/* MAIN ACADEMIC TABLE */}
+            <div className="w-full flex-1 mb-2 flex flex-col">
+              <table className="w-full text-center border-collapse text-[11px] font-bold border-[2px] border-schoolRed">
+                <thead>
+                  <tr className="bg-[#fae6d1] text-schoolRed border-b-[2px] border-schoolRed">
+                    <th rowSpan={2} className="border-r-[2px] border-schoolRed p-1 text-left uppercase">Subjects</th>
+                    <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">First Term (40)</th>
+                    <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Second Term (60)</th>
+                    <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Third Term (100)</th>
+                    <th colSpan={2} className="border-r-[2px] border-schoolRed p-1 uppercase">Grand Total</th>
+                    <th rowSpan={2} className="p-1 uppercase">Grade</th>
+                  </tr>
+                  <tr className="bg-[#fae6d1] text-schoolBlue border-b-[2px] border-schoolRed text-[10px]">
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MARKS OBT</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">MM</th>
+                    <th className="border-r-[2px] border-schoolRed border-t-[2px] border-schoolRed p-1">TOTAL</th>
+                  </tr>
+                </thead>
+                <tbody className="text-schoolBlue">
+                  {['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'].map((sub, i) => (
+                    <tr key={i} className="border-b-[2px] border-schoolRed">
+                      <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">{sub}</td>
+                      <td className="border-r-[2px] border-schoolRed p-1">40</td>
+                      <td className="border-r-[2px] border-schoolRed p-1"></td>
+                      <td className="border-r-[2px] border-schoolRed p-1">60</td>
+                      <td className="border-r-[2px] border-schoolRed p-1"></td>
+                      <td className="border-r-[2px] border-schoolRed p-1">100</td>
+                      <td className="border-r-[2px] border-schoolRed p-1"></td>
+                      <td className="border-r-[2px] border-schoolRed p-1">200</td>
+                      <td className="border-r-[2px] border-schoolRed p-1"></td>
+                      <td className="p-1 text-schoolRed">E</td>
+                    </tr>
+                  ))}
+                  <tr className="border-b-[2px] border-schoolRed bg-[#e0f7fa]">
+                    <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">TOTAL</td>
+                    <td className="border-r-[2px] border-schoolRed p-1">320</td>
+                    <td className="border-r-[2px] border-schoolRed p-1"></td>
+                    <td className="border-r-[2px] border-schoolRed p-1">480</td>
+                    <td className="border-r-[2px] border-schoolRed p-1"></td>
+                    <td className="border-r-[2px] border-schoolRed p-1">800</td>
+                    <td className="border-r-[2px] border-schoolRed p-1"></td>
+                    <td className="border-r-[2px] border-schoolRed p-1">1600</td>
+                    <td className="border-r-[2px] border-schoolRed p-1 text-black">0</td>
+                    <td className="p-1"></td>
+                  </tr>
+                  <tr className="bg-[#e0f7fa]">
+                    <td className="border-r-[2px] border-schoolRed p-1 text-left text-black">PERCENTAGE</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">0%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">0%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">0%</td>
+                    <td colSpan={2} className="border-r-[2px] border-schoolRed p-1 text-black">0%</td>
+                    <td className="p-1 text-schoolBlue">E</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            {/* Signatures */}
-            <div className="mt-6 flex justify-between items-end px-8 pb-4 font-semibold text-sm">
+            {/* Co-Scholastic Area & Grade Scale */}
+            <div className="w-full flex flex-col mb-4 mt-auto">
+              <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
+                <tbody>
+                  <tr className="border-b-[2px] border-black bg-[#fae6d1]">
+                    <td colSpan={2} className="text-left p-1 border-r-[2px] border-black text-black">Co-Scholastic Area</td>
+                    <td colSpan={6} className="text-right p-1 text-[9px] font-normal text-schoolBlue">A+: Outstanding A: Excellent B+: Very Good B: Good C: Average</td>
+                  </tr>
+                  <tr>
+                    <td className="p-1 border-r border-black text-left w-24">Sports & Games</td>
+                    <td className="p-1 border-r-[2px] border-black w-10"></td>
+                    <td className="p-1 border-r border-black text-left w-24">Art & Craft</td>
+                    <td className="p-1 border-r-[2px] border-black w-10"></td>
+                    <td className="p-1 border-r border-black text-left w-24">Music & Dance</td>
+                    <td className="p-1 border-r-[2px] border-black w-10"></td>
+                    <td className="p-1 border-r border-black text-left w-24">Discipline</td>
+                    <td className="p-1 border-black w-10"></td>
+                  </tr>
+                </tbody>
+              </table>
+              <table className="w-full text-[10px] border-[2px] border-black text-center font-bold text-white">
+                <tbody>
+                  <tr>
+                    <td className="bg-black p-1 border-r border-white w-20 leading-tight">GRADE<br/>SCALE</td>
+                    <td className="bg-gray-400 p-1 border-r border-white text-black leading-tight">91-100<br/>A1</td>
+                    <td className="bg-gray-300 p-1 border-r border-white text-black leading-tight">81-90<br/>A2</td>
+                    <td className="bg-gray-200 p-1 border-r border-white text-black leading-tight">71-80<br/>B1</td>
+                    <td className="bg-gray-100 p-1 border-r border-white text-black leading-tight">61-70<br/>B2</td>
+                    <td className="bg-gray-200 p-1 border-r border-white text-black leading-tight">51-60<br/>C1</td>
+                    <td className="bg-gray-300 p-1 border-r border-white text-black leading-tight">41-50<br/>C2</td>
+                    <td className="bg-gray-400 p-1 border-r border-white text-black leading-tight">33-40<br/>D</td>
+                    <td className="bg-schoolRed p-1 leading-tight">00-32<br/>E</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="flex justify-between text-xs font-bold mt-3 text-schoolBlue">
+                <div>Remark : <span className="border-b border-black inline-block w-64"></span></div>
+                <div>Attendance : <span className="border-b border-black inline-block w-20"></span></div>
+                <div>Class Rank : <span className="border-b border-black inline-block w-20"></span></div>
+              </div>
+            </div>
+
+            {/* Signatures Footer */}
+            <div className="flex justify-between items-end px-8 pb-4 font-semibold text-sm">
               <div className="border-t border-black w-32 text-center pt-1">Date</div>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
               <div className="flex flex-col items-center">
