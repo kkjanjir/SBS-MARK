@@ -1,25 +1,27 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, User, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, CloudUpload, Loader2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+// 🚀 SUPABASE CONNECTION SETUP (Aapki chabiyan yahan hain)
+const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
+const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const subjectsList = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 
-// Dummy Data for Dashboard
-const recentStudents = [
-  { id: 1, name: "SANJAY KUMAR", class: "7", roll: "15", date: "11 Mar 2026" },
-  { id: 2, name: "AMAN VERMA", class: "7", roll: "16", date: "10 Mar 2026" },
-  { id: 3, name: "PRIYA SINGH", class: "7", roll: "17", date: "09 Mar 2026" }
-];
-
 export default function MarksheetApp() {
-  // --- APP STATES ---
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  
+  // Database States
+  const [dbStudents, setDbStudents] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingList, setIsLoadingList] = useState(true);
 
-  // --- DATA STATES ---
   const [student, setStudent] = useState({
     name: "", roll: "", mother: "", father: "", dob: "", admission: "",
   });
@@ -30,23 +32,60 @@ export default function MarksheetApp() {
     return initial;
   });
 
-  // 💾 AUTO-SAVE LOGIC (Draft Memory)
-  useEffect(() => {
-    const savedData = localStorage.getItem('marksheetDraft');
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      setStudent(parsed.student);
-      setMarks(parsed.marks);
-    }
-  }, []);
+  // 📡 FETCH STUDENTS FROM CLOUD
+  const fetchStudentsFromCloud = async () => {
+    setIsLoadingList(true);
+    const { data, error } = await supabase
+      .from('marks_records')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (data) setDbStudents(data);
+    setIsLoadingList(false);
+  };
 
   useEffect(() => {
-    if (student.name !== "") {
-      localStorage.setItem('marksheetDraft', JSON.stringify({ student, marks }));
+    if (view === 'dashboard') {
+      fetchStudentsFromCloud();
     }
-  }, [student, marks]);
+  }, [view]);
 
-  // --- HANDLERS ---
+  // 💾 SAVE STUDENT TO CLOUD
+  const saveToCloud = async () => {
+    if (!student.name || !student.roll) {
+      alert("Please enter at least Student Name and Roll No before saving!");
+      return;
+    }
+    setIsSaving(true);
+    const { data, error } = await supabase
+      .from('marks_records')
+      .insert([
+        { 
+          student_name: student.name, 
+          roll_no: student.roll, 
+          student_data: student, 
+          marks_data: marks 
+        }
+      ]);
+
+    setIsSaving(false);
+    if (error) {
+      alert("Save failed! Error: " + error.message);
+    } else {
+      alert("🎉 Student saved successfully to Cloud!");
+      setView('dashboard');
+      resetForm();
+    }
+  };
+
+  // ✏️ EDIT SAVED STUDENT
+  const editStudent = (record: any) => {
+    setStudent(record.student_data);
+    setMarks(record.marks_data);
+    setStep(1);
+    setView('editor');
+  };
+
   const handleDetailChange = (e: any) => {
     setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
   };
@@ -105,7 +144,6 @@ export default function MarksheetApp() {
     setIsDownloading(false);
   };
 
-  // --- CALCULATIONS ---
   let gTotalT1 = 0, gTotalT2 = 0, gTotalT3 = 0, grandTotal = 0;
   subjectsList.forEach(sub => {
     gTotalT1 += Number(marks[sub]?.t1) || 0;
@@ -117,24 +155,22 @@ export default function MarksheetApp() {
   let finalGrade = grandTotal > 0 ? getGrade(grandTotal, 1600) : "";
 
   // ==========================================
-  // VIEW 1: DASHBOARD
+  // VIEW 1: DASHBOARD (Cloud Connected)
   // ==========================================
   if (view === 'dashboard') {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
         <div className="w-full max-w-4xl">
-          {/* Header */}
           <div className="flex justify-between items-center mb-10">
             <div>
               <h1 className="text-3xl font-extrabold text-schoolRed">EduPrime SMS</h1>
-              <p className="text-gray-500 font-medium">Marksheet Generator Pro</p>
+              <p className="text-gray-500 font-medium">Marksheet Generator Pro <span className="text-green-600 text-xs font-bold ml-2 px-2 py-1 bg-green-100 rounded-full">Cloud Active ☁️</span></p>
             </div>
             <div className="h-12 w-12 bg-schoolBlue text-white rounded-full flex items-center justify-center text-xl font-bold shadow-md">
               A
             </div>
           </div>
 
-          {/* Action Bar */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
@@ -154,30 +190,44 @@ export default function MarksheetApp() {
             </button>
           </div>
 
-          {/* Recent List */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="font-bold text-gray-700 flex items-center gap-2"><FileText size={18}/> Recently Added (Phase 2 Demo)</h3>
+            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2"><FileText size={18}/> Cloud Database</h3>
+              <button onClick={fetchStudentsFromCloud} className="text-sm text-schoolBlue font-semibold hover:underline">Refresh</button>
             </div>
-            <div className="divide-y divide-gray-100">
-              {recentStudents.filter(s => s.name.includes(searchQuery.toUpperCase())).map((student) => (
-                <div key={student.id} className="p-6 flex items-center justify-between hover:bg-blue-50/50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">
-                      {student.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-800">{student.name}</h4>
-                      <p className="text-xs font-medium text-gray-500">Class {student.class} • Roll: {student.roll} • Added: {student.date}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setView('editor')} className="text-schoolBlue hover:text-schoolRed bg-white border shadow-sm p-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all">
-                    <Edit size={16}/> Edit
-                  </button>
+            
+            <div className="divide-y divide-gray-100 min-h-[200px]">
+              {isLoadingList ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                  <Loader2 className="animate-spin mb-2" size={32} />
+                  <p>Loading records from cloud...</p>
                 </div>
-              ))}
-              {recentStudents.length === 0 && (
-                <div className="p-8 text-center text-gray-400">No students found.</div>
+              ) : (
+                <>
+                  {dbStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase()) || s.roll_no.includes(searchQuery)).map((studentData) => (
+                    <div key={studentData.id} className="p-6 flex items-center justify-between hover:bg-blue-50/50 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">
+                          {studentData.student_name.charAt(0)}
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-gray-800">{studentData.student_name}</h4>
+                          <p className="text-xs font-medium text-gray-500">Roll: {studentData.roll_no} • Saved on: {new Date(studentData.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => editStudent(studentData)} className="text-schoolBlue hover:text-schoolRed bg-white border shadow-sm p-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all">
+                        <Edit size={16}/> Open
+                      </button>
+                    </div>
+                  ))}
+                  {dbStudents.length === 0 && (
+                    <div className="py-12 text-center text-gray-500 flex flex-col items-center">
+                      <CloudUpload size={48} className="text-gray-300 mb-3" />
+                      <p className="font-bold text-lg">No records found!</p>
+                      <p className="text-sm">Create a new marksheet and save it to see it here.</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -187,12 +237,11 @@ export default function MarksheetApp() {
   }
 
   // ==========================================
-  // VIEW 2: SMART WIZARD & LIVE PREVIEW
+  // VIEW 2: SMART WIZARD
   // ==========================================
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans print:bg-white overflow-x-hidden">
       
-      {/* 🛑 PRINT CSS FORCE */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
           @page { size: A4 portrait; margin: 0; }
@@ -202,23 +251,16 @@ export default function MarksheetApp() {
         }
       `}} />
 
-      {/* HEADER BAR (Hidden in Print) */}
       <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print sticky top-0 z-50">
         <button onClick={() => setView('dashboard')} className="flex items-center gap-2 text-gray-600 hover:text-schoolBlue font-bold transition-colors">
-          <Home size={20} /> Dashboard
+          <Home size={20} /> Back to Dashboard
         </button>
-        <div className="flex items-center gap-2">
-          <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-bold flex items-center gap-1"><CheckCircle size={14}/> Auto-Saved</span>
-        </div>
       </div>
 
-      {/* TWO-COLUMN LAYOUT */}
       <div className="flex-1 flex flex-col lg:flex-row w-full no-print">
         
-        {/* LEFT PANE: PROGRESSIVE WIZARD */}
         <div className="w-full lg:w-[45%] bg-white p-6 lg:p-10 border-r border-gray-200 overflow-y-auto no-print shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-10">
           
-          {/* Stepper Header */}
           <div className="flex justify-between items-center mb-8 relative">
             <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2 rounded-full"></div>
             <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2 rounded-full transition-all duration-300" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
@@ -234,10 +276,9 @@ export default function MarksheetApp() {
             {step === 2 && "📝 Term 1 Marks (Out of 40)"}
             {step === 3 && "📝 Term 2 Marks (Out of 60)"}
             {step === 4 && "📝 Term 3 Marks (Out of 100)"}
-            {step === 5 && "🎉 Final Review & Print"}
+            {step === 5 && "🎉 Final Review & Save"}
           </h2>
 
-          {/* STEP 1: DETAILS */}
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -251,7 +292,6 @@ export default function MarksheetApp() {
             </div>
           )}
 
-          {/* STEP 2, 3, 4: MARKS */}
           {[2, 3, 4].includes(step) && (
             <div className="space-y-3 animate-in fade-in slide-in-from-right-4 duration-300">
               {subjectsList.map((sub) => {
@@ -276,27 +316,25 @@ export default function MarksheetApp() {
             </div>
           )}
 
-          {/* STEP 5: ACTIONS */}
           {step === 5 && (
             <div className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
               <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl text-center">
-                <CheckCircle className="mx-auto text-schoolBlue mb-3" size={48} />
+                <CloudUpload className="mx-auto text-schoolBlue mb-3" size={48} />
                 <h3 className="text-xl font-bold text-schoolBlue mb-1">Marksheet Ready!</h3>
-                <p className="text-sm font-medium text-gray-600 mb-6">Review the preview on the right. If everything looks perfect, generate the final PDF.</p>
+                <p className="text-sm font-medium text-gray-600 mb-6">Save this record to the cloud database before printing.</p>
                 
                 <div className="flex flex-col gap-3">
+                  <button onClick={saveToCloud} disabled={isSaving} className={`w-full text-white px-6 py-4 rounded-xl shadow-lg font-bold transition-all flex items-center justify-center gap-2 text-lg ${isSaving ? 'bg-blue-400' : 'bg-schoolBlue hover:bg-blue-800 hover:scale-[1.02]'}`}>
+                    {isSaving ? <><Loader2 className="animate-spin" size={20}/> Saving to Cloud...</> : <><CloudUpload size={20} /> Save to Database</>}
+                  </button>
                   <button onClick={triggerPrint} className="w-full bg-gray-800 text-white px-6 py-4 rounded-xl shadow-lg font-bold hover:scale-[1.02] transition-all flex items-center justify-center gap-2 text-lg">
                     <Printer size={20} /> Print Directly
-                  </button>
-                  <button onClick={handleDownloadPDF} disabled={isDownloading} className={`w-full text-white px-6 py-4 rounded-xl shadow-lg font-bold transition-all flex items-center justify-center gap-2 text-lg ${isDownloading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700 hover:scale-[1.02]'}`}>
-                    {isDownloading ? '⏳ Generating HD PDF...' : <><Download size={20} /> Download HD PDF</>}
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Navigation Buttons */}
           <div className="mt-10 flex justify-between pt-6 border-t border-gray-100">
             <button 
               onClick={() => setStep(s => Math.max(1, s - 1))} 
@@ -316,20 +354,16 @@ export default function MarksheetApp() {
 
         </div>
 
-        {/* RIGHT PANE: LIVE PREVIEW SCALED */}
         <div className="w-full lg:w-[55%] bg-gray-800 lg:p-8 flex items-start justify-center overflow-auto relative no-print">
           <div className="absolute top-4 right-4 bg-black/50 text-white px-4 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm z-20">
             Live Preview
           </div>
-          
-          {/* Scaling wrapper for desktop so A4 fits nicely without huge scroll */}
           <div className="lg:origin-top lg:scale-[0.75] xl:scale-[0.85] transition-transform duration-300 flex justify-center w-full">
             <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} gTotalT1={gTotalT1} gTotalT2={gTotalT2} gTotalT3={gTotalT3} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} />
           </div>
         </div>
       </div>
 
-      {/* HIDDEN IN BROWSER, ONLY VISIBLE IN PRINT */}
       <div className="hidden print:block w-[210mm] h-[296mm] mx-auto overflow-hidden">
         <MarksheetTemplate student={student} marks={marks} subjectsList={subjectsList} gTotalT1={gTotalT1} gTotalT2={gTotalT2} gTotalT3={gTotalT3} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} />
       </div>
@@ -338,10 +372,6 @@ export default function MarksheetApp() {
   )
 }
 
-
-// ==========================================
-// A4 MARKSHEET TEMPLATE COMPONENT (Extracted for clean code)
-// ==========================================
 function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, gTotalT3, grandTotal, percentage, finalGrade }: any) {
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
@@ -355,16 +385,13 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
   return (
     <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
       
-      {/* Background Watermark */}
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none">
         <img src="/logo.png" alt="Watermark" className="w-[450px] h-[450px] object-contain" />
       </div>
 
-      {/* Main Content Wrapper */}
       <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
         <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
           
-          {/* HEADER SECTION */}
           <div className="flex justify-between items-start mb-3">
             <div className="w-28 h-28 flex items-center justify-center p-1">
               <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
@@ -392,7 +419,6 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
             </div>
           </div>
 
-          {/* Dynamic Student Details Section */}
           <div className="bg-[#e0f7fa] border border-schoolRed p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-3 uppercase">
             <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
             <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
@@ -404,7 +430,6 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
             <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: GHAZIPUR, UP</span></div>
           </div>
 
-          {/* AUTO-CALCULATING ACADEMIC TABLE */}
           <div className="w-full flex-1 mb-3 flex flex-col">
             <table className="w-full text-center border-collapse text-[11px] font-bold border-[2px] border-schoolRed">
               <thead>
@@ -471,7 +496,6 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
             </table>
           </div>
 
-          {/* Co-Scholastic Area & Grade Scale (Moved Up with mb-5) */}
           <div className="w-full flex flex-col mt-auto mb-5">
             <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
               <tbody>
@@ -509,7 +533,6 @@ function MarksheetTemplate({ student, marks, subjectsList, gTotalT1, gTotalT2, g
             </div>
           </div>
 
-          {/* Signatures Footer (Signature Image 1.75x Bigger) */}
           <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm">
             <div className="border-t border-black w-32 text-center pt-1">Date</div>
             <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
