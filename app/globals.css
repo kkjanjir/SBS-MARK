@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* A4 Print Setup - Zero Margin */
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background-color: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+body {
+  background-color: #f3f4f6; /* Web view ke liye light grey background */
+}
