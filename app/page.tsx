@@ -1,10 +1,58 @@
 'use client'
+import { useState } from 'react';
 
 export default function Marksheet() {
+  // APP KI MEMORY (State): Yahan form ka data save hoga
+  const [student, setStudent] = useState({
+    name: "SANJAY KUMAR",
+    roll: "15",
+    mother: "SUNITA DEVI",
+    father: "RAMESH KUMAR",
+    dob: "15-08-2012",
+    admission: "2025/104",
+  });
+
+  // Jab bhi form me kuch type hoga, ye function memory ko update karega
+  const handleChange = (e: any) => {
+    setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() });
+  };
+
   return (
     <div className="flex flex-col items-center bg-gray-200 min-h-screen py-8 print:py-0 print:bg-white">
       
-      {/* A4 Canvas Container */}
+      {/* 🟢 DATA ENTRY FORM (Ye Print me nahi dikhega) */}
+      <div className="w-[210mm] bg-white p-6 rounded-xl shadow-lg mb-8 border-t-8 border-schoolBlue print:hidden">
+        <h2 className="text-2xl font-bold text-schoolBlue mb-4 border-b-2 pb-2">📝 Student Data Entry</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Student's Name</label>
+            <input type="text" name="name" value={student.name} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Roll No.</label>
+            <input type="text" name="roll" value={student.roll} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Admission No.</label>
+            <input type="text" name="admission" value={student.admission} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Father's Name</label>
+            <input type="text" name="father" value={student.father} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Mother's Name</label>
+            <input type="text" name="mother" value={student.mother} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Date of Birth</label>
+            <input type="text" name="dob" value={student.dob} onChange={handleChange} className="w-full border-2 border-gray-300 p-2 rounded focus:border-schoolBlue outline-none font-semibold text-sm" />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-4 italic">*Aap yahan jo bhi likhenge, wo niche marksheet me apne aap update ho jayega.</p>
+      </div>
+
+      {/* 🔴 A4 MARKSHEET CANVAS (Ye Print hoga) */}
       <div className="w-[210mm] min-h-[297mm] bg-white relative print:w-full print:h-full shadow-2xl print:shadow-none overflow-hidden text-black text-sm">
         
         {/* Background Watermark */}
@@ -41,19 +89,19 @@ export default function Marksheet() {
               </div>
             </div>
 
-            {/* Student Details Section */}
-            <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-2">
-              <div className="flex"><span className="w-36">STUDENT&apos;S NAME</span><span>: SANJAY KUMAR</span></div>
-              <div className="flex"><span className="w-32">ROLL NO.</span><span>: 15</span></div>
-              <div className="flex"><span className="w-36">MOTHER&apos;S NAME</span><span>: SUNITA DEVI</span></div>
-              <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: 2025/104</span></div>
-              <div className="flex"><span className="w-36">FATHER&apos;S NAME</span><span>: RAMESH KUMAR</span></div>
-              <div className="flex"><span className="w-32">DATE OF BIRTH</span><span>: 15-08-2012</span></div>
+            {/* 🔥 DYNAMIC Student Details Section 🔥 */}
+            <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-2 uppercase">
+              <div className="flex"><span className="w-36">STUDENT&apos;S NAME</span><span>: {student.name}</span></div>
+              <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
+              <div className="flex"><span className="w-36">MOTHER&apos;S NAME</span><span>: {student.mother}</span></div>
+              <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: {student.admission}</span></div>
+              <div className="flex"><span className="w-36">FATHER&apos;S NAME</span><span>: {student.father}</span></div>
+              <div className="flex"><span className="w-32">DATE OF BIRTH</span><span>: {student.dob}</span></div>
               <div className="flex"><span className="w-36">GENDER</span><span>: MALE</span></div>
               <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: GHAZIPUR, UP</span></div>
             </div>
 
-            {/* MAIN ACADEMIC TABLE */}
+            {/* MAIN ACADEMIC TABLE (Abhi ke liye static) */}
             <div className="w-full flex-1 mb-2 flex flex-col">
               <table className="w-full text-center border-collapse text-[11px] font-bold border-[2px] border-schoolRed">
                 <thead>
