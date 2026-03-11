@@ -35,8 +35,7 @@ export default function MarksheetApp() {
   
   // Download States
   const [isDownloadingSingle, setIsDownloadingSingle] = useState(false);
-  const [isDownloadingBulk, setIsDownloadingBulk] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState(0);
+  const [isBulkPrinting, setIsBulkPrinting] = useState(false);
 
   // Default Issue Date Logic
   const currentYear = new Date().getFullYear();
@@ -70,7 +69,7 @@ export default function MarksheetApp() {
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
+  useEffect(() => { if (view === 'dashboard' && !isBulkPrinting) fetchStudentsFromCloud(); }, [view, isBulkPrinting]);
 
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
@@ -157,7 +156,6 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  // 🛠️ RANK FUNCTION FIXED HERE
   const getClassRank = (myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
@@ -176,17 +174,17 @@ export default function MarksheetApp() {
     resetMarks();
   };
 
-  // 🖨️ NATIVE PRINT TRIGGER
+  // 🖨️ NATIVE PRINT TRIGGER (Single)
   const triggerPrint = () => {
     document.title = `${student.name || 'Student'} - Class ${activeClass}`;
     window.print();
   };
 
-  // ⬇️ INDIVIDUAL PDF DOWNLOAD
+  // ⬇️ INDIVIDUAL PDF DOWNLOAD (Fixed hidden rendering issue)
   const handleSingleDownload = async () => {
     setIsDownloadingSingle(true);
     window.scrollTo(0, 0); 
-    const element = document.getElementById('marksheet-print-view');
+    const element = document.getElementById('marksheet-export-target');
     if (element) {
       try {
         const html2canvas = (await import('html2canvas')).default;
@@ -205,38 +203,44 @@ export default function MarksheetApp() {
     setIsDownloadingSingle(false);
   };
 
-  // 📚 BULK CLASS PDF DOWNLOAD (Multi-page PDF)
-  const handleBulkDownload = async () => {
+  // 📚 BULK CLASS PDF DOWNLOAD (Native Vector Engine - Perfect Quality)
+  const handleBulkDownload = () => {
     const classStudents = dbStudents.filter(s => s.class_name === activeClass);
     if (classStudents.length === 0) return alert("No students in this class to download!");
     
-    setIsDownloadingBulk(true);
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-      const pdf = new jsPDF('p', 'mm', 'a4'); 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-
-      for (let i = 0; i < classStudents.length; i++) {
-        setBulkProgress(i + 1);
-        const element = document.getElementById(`bulk-marksheet-${classStudents[i].id}`);
-        if (element) {
-          // Scale 1.5 to prevent memory crash on large classes
-          const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' });
-          const imgData = canvas.toDataURL('image/jpeg', 0.9);
-          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-          if (i > 0) pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        }
-      }
-      pdf.save(`Class_${activeClass}_All_Marksheets.pdf`);
-    } catch (error) {
-      alert("Error generating bulk PDF!");
-      console.error(error);
-    }
-    setIsDownloadingBulk(false);
-    setBulkProgress(0);
+    setIsBulkPrinting(true);
+    setTimeout(() => {
+      document.title = `Class_${activeClass}_All_Marksheets`;
+      window.print();
+      setIsBulkPrinting(false);
+    }, 1000); // 1 second buffer to render pages before opening print dialog
   };
+
+  // ==========================================
+  // BULK PRINT RENDERER (Only visible when Bulk Printing)
+  // ==========================================
+  if (isBulkPrinting) {
+    const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
+    return (
+      <div className="bg-white print:bg-white w-full">
+        <style dangerouslySetInnerHTML={{__html: `
+          @media print {
+            @page { size: A4 portrait; margin: 0; }
+            body { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page-break { page-break-after: always; display: block; margin: 0; padding: 0; border: none; }
+          }
+        `}} />
+        {classFilteredStudents.map((s, index) => {
+          const calcs = getCalculations(s.marks_data, s.class_name);
+          return (
+            <div key={s.id} className="w-[210mm] h-[296mm] mx-auto overflow-hidden bg-white" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+              <MarksheetTemplate templateId={`bulk-${s.id}`} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
+            </div>
+          )
+        })}
+      </div>
+    );
+  }
 
 
   // ==========================================
@@ -247,26 +251,6 @@ export default function MarksheetApp() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
         
-        {/* Hidden Bulk Render Container (For html2canvas only) */}
-        <div className="absolute top-[-20000px] left-0 pointer-events-none opacity-0">
-          {classFilteredStudents.map(s => {
-            const calcs = getCalculations(s.marks_data, s.class_name);
-            return (
-              <MarksheetTemplate key={s.id} templateId={`bulk-marksheet-${s.id}`} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
-            )
-          })}
-        </div>
-
-        {/* Loading Overlay for Bulk Download */}
-        {isDownloadingBulk && (
-          <div className="fixed inset-0 bg-black/80 z-[9999] flex flex-col items-center justify-center text-white backdrop-blur-sm">
-            <Loader2 className="animate-spin mb-4" size={64} />
-            <h2 className="text-2xl font-bold mb-2">Generating Master PDF...</h2>
-            <p className="text-gray-300">Processing student {bulkProgress} of {classFilteredStudents.length}</p>
-            <p className="text-xs text-yellow-400 mt-4">Please do not close or switch tabs.</p>
-          </div>
-        )}
-
         <div className="w-full max-w-5xl">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div className="flex items-center gap-4">
@@ -372,24 +356,29 @@ export default function MarksheetApp() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden print:bg-white">
       
-      {/* 🛑 BULLETPROOF PRINT CSS */}
+      {/* 🛑 BULLETPROOF PRINT CSS (Single Print) */}
       <style dangerouslySetInnerHTML={{__html: `
         @media print {
           @page { size: A4 portrait; margin: 0; }
-          body { margin: 0 !important; padding: 0 !important; background: white !important; }
+          body { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .no-print { display: none !important; }
           .print-container { 
             display: block !important; 
             position: absolute; 
             top: 0; left: 0; 
             width: 210mm !important; 
-            height: 297mm !important; 
+            height: 296mm !important; 
             margin: 0; padding: 0; 
             z-index: 9999; 
             background: white;
           }
         }
       `}} />
+
+      {/* OFF-SCREEN RENDER CONTAINER FOR SINGLE PDF DOWNLOAD */}
+      <div className="absolute top-[-9999px] left-[-9999px] pointer-events-none no-print">
+        <MarksheetTemplate templateId="marksheet-export-target" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+      </div>
 
       <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print">
         <button onClick={() => setView('dashboard')} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
@@ -513,7 +502,7 @@ export default function MarksheetApp() {
         </div>
       </div>
 
-      {/* 🛑 PRINT / DOWNLOAD RENDER CONTAINER (Visible only to printer and html2canvas) */}
+      {/* 🛑 PRINT RENDER CONTAINER (Single Print) */}
       <div className="hidden print-container">
         <MarksheetTemplate templateId="marksheet-print-view" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
       </div>
@@ -540,7 +529,7 @@ function MarksheetTemplate({ templateId, student, marks, subjectsList, grandTota
   };
 
   return (
-    <div id={templateId} className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
+    <div id={templateId} className="w-[210mm] h-[296mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
         <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
