@@ -12,18 +12,16 @@ export default function Marksheet() {
           <img src="/logo.png" alt="Watermark" className="w-[400px] h-[400px] object-contain" />
         </div>
 
-        {/* Main Content Wrapper (With Red Border) */}
+        {/* Main Content Wrapper */}
         <div className="relative z-10 h-full border-[6px] border-schoolRed m-2 p-1">
           <div className="border-[2px] border-schoolRed h-full p-4 flex flex-col">
             
             {/* Header Section */}
             <div className="flex justify-between items-start mb-2">
-              {/* Logo */}
               <div className="w-24 h-24 flex items-center justify-center">
-                <img src="/logo.png" alt="School Logo" className="w-full h-full object-contain" />
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
               </div>
 
-              {/* School Info */}
               <div className="text-center flex-1 px-2">
                 <h1 className="text-3xl font-bold text-schoolRed uppercase tracking-wider">SBS Shiksha Niketan</h1>
                 <p className="font-semibold mt-1">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
@@ -36,7 +34,6 @@ export default function Marksheet() {
                 <p className="font-bold text-lg mt-1">CLASS : 7</p>
               </div>
 
-              {/* Student Photo Placeholder */}
               <div className="w-20 h-24 border border-gray-400 flex flex-col items-center justify-center bg-gray-50 text-gray-400 text-xs">
                 <span className="text-2xl mb-1">👤</span>
                 <p>Student</p>
@@ -44,24 +41,24 @@ export default function Marksheet() {
               </div>
             </div>
 
-            {/* Student Details Section (Cyan Background) */}
+            {/* Student Details Section (Fix Applied Here) */}
             <div className="bg-[#e0f7fa] border border-schoolRed p-3 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-4">
-              <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: SANJAY KUMAR</span></div>
+              <div className="flex"><span className="w-36">STUDENT&apos;S NAME</span><span>: SANJAY KUMAR</span></div>
               <div className="flex"><span className="w-32">ROLL NO.</span><span>: 15</span></div>
-              <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: SUNITA DEVI</span></div>
+              <div className="flex"><span className="w-36">MOTHER&apos;S NAME</span><span>: SUNITA DEVI</span></div>
               <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: 2025/104</span></div>
-              <div className="flex"><span className="w-36">FATHER'S NAME</span><span>: RAMESH KUMAR</span></div>
+              <div className="flex"><span className="w-36">FATHER&apos;S NAME</span><span>: RAMESH KUMAR</span></div>
               <div className="flex"><span className="w-32">DATE OF BIRTH</span><span>: 15-08-2012</span></div>
               <div className="flex"><span className="w-36">GENDER</span><span>: MALE</span></div>
               <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: GHAZIPUR, UP</span></div>
             </div>
 
-            {/* Academic Performance Table Placeholder */}
+            {/* Table Area Placeholder */}
             <div className="flex-1 border border-schoolRed flex items-center justify-center bg-gray-50">
-               <p className="text-gray-400 font-bold text-lg">[Yahan aapka exact Subject aur Marks ka table aayega]</p>
+               <p className="text-gray-400 font-bold">Marks Table yahan aayega</p>
             </div>
 
-            {/* Footer Signatures */}
+            {/* Signatures */}
             <div className="mt-6 flex justify-between items-end px-8 pb-4 font-semibold text-sm">
               <div className="border-t border-black w-32 text-center pt-1">Date</div>
               <div className="border-t border-black w-32 text-center pt-1">Class Teacher</div>
@@ -74,8 +71,8 @@ export default function Marksheet() {
           </div>
         </div>
       </div>
-
-      {/* Floating Print Button (Hidden on Print) */}
+      
+      {/* Floating Print Button */}
       <button 
         onClick={() => window.print()} 
         className="fixed bottom-8 right-8 bg-schoolBlue text-white px-6 py-3 rounded-full shadow-2xl font-bold print:hidden hover:bg-blue-800 hover:scale-105 transition-all"
