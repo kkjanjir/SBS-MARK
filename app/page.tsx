@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2 } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -9,6 +9,7 @@ const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
+const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
@@ -31,43 +32,37 @@ export default function MarksheetApp() {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
+  
+  // Download States
+  const [isDownloadingSingle, setIsDownloadingSingle] = useState(false);
+  const [isDownloadingBulk, setIsDownloadingBulk] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
 
-  // Default Issue Date Logic (March 31 of current session)
+  // Default Issue Date Logic
   const currentYear = new Date().getFullYear();
   const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 
-  // DOB Max Date Limit (At least 2 years old)
+  // DOB Limit
   const maxDobDate = new Date();
   maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
   const maxDobStr = maxDobDate.toISOString().split('T')[0];
 
   // Form States
-  const [student, setStudent] = useState({
-    name: "", roll: "", mother: "", father: "", dob: "", admission: "", gender: "MALE", address: ""
-  });
-  
-  const [extraDetails, setExtraDetails] = useState({
-    attendance: "", remark: "", issueDate: defaultIssue
-  });
-
-  const [coScholastic, setCoScholastic] = useState<CoScholasticState>({
-    sports: "A", art: "A", music: "A", discipline: "A"
-  });
-
+  const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", dob: "", admission: "", gender: "MALE", address: "" });
+  const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
+  const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarksState>({});
 
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
 
-  // Initialize System
   useEffect(() => {
     const savedConfig = localStorage.getItem('sbsSubjects');
     if (savedConfig) setSubjectConfig(JSON.parse(savedConfig));
     resetMarks();
   }, [activeClass]);
 
-  // 📡 FETCH FROM CLOUD
   const fetchStudentsFromCloud = async () => {
     setIsLoadingList(true);
     const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
@@ -77,7 +72,6 @@ export default function MarksheetApp() {
 
   useEffect(() => { if (view === 'dashboard') fetchStudentsFromCloud(); }, [view]);
 
-  // 🛠️ HANDLERS
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
@@ -95,18 +89,13 @@ export default function MarksheetApp() {
     }
   };
 
-  // 💾 SAVE & NEXT LOGIC
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     setIsSaving(true);
-    let myTotal = calculateGrandTotal(marks);
+    let myTotal = getCalculations(marks, activeClass).grandTotal;
     
     const { data, error } = await supabase.from('marks_records').insert([
-      { 
-        student_name: student.name, roll_no: student.roll, class_name: activeClass,
-        student_data: { ...student, photo: studentPhoto }, marks_data: marks,
-        extra_data: { ...extraDetails, coScholastic, total: myTotal }
-      }
+      { student_name: student.name, roll_no: student.roll, class_name: activeClass, student_data: { ...student, photo: studentPhoto }, marks_data: marks, extra_data: { ...extraDetails, coScholastic, total: myTotal } }
     ]);
 
     setIsSaving(false);
@@ -136,25 +125,26 @@ export default function MarksheetApp() {
     setStudentPhoto(null);
   };
 
-  // --- CALCULATIONS & LOGIC ---
-  const calculateGrandTotal = (m: MarksState) => {
-    let total = 0;
-    currentSubjectsList.forEach(sub => { total += (Number(m[sub]?.t1)||0) + (Number(m[sub]?.t2)||0) + (Number(m[sub]?.t3)||0); });
-    return total;
-  };
-
+  // --- CALCULATIONS ---
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
-    let perc = (Number(marksObtained) / maxMarks) * 100;
-    if (perc >= 91) return 'A1'; if (perc >= 81) return 'A2'; if (perc >= 71) return 'B1'; if (perc >= 61) return 'B2';
-    if (perc >= 51) return 'C1'; if (perc >= 41) return 'C2'; if (perc >= 33) return 'D';  return 'E';
+    let p = (Number(marksObtained) / maxMarks) * 100;
+    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
-  let grandTotal = calculateGrandTotal(marks);
-  let percentage = grandTotal > 0 ? ((grandTotal / (currentSubjectsList.length * 200)) * 100).toFixed(1) : "0";
-  let finalGrade = grandTotal > 0 ? getGrade(grandTotal, currentSubjectsList.length * 200) : "";
+  const getCalculations = (mObj: MarksState, clsName: string) => {
+    const subs = subjectConfig[clsName] || DEFAULT_SUBJECTS;
+    let gTotal = 0;
+    subs.forEach(sub => { gTotal += (Number(mObj[sub]?.t1)||0) + (Number(mObj[sub]?.t2)||0) + (Number(mObj[sub]?.t3)||0); });
+    const mMax = subs.length * 200;
+    const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
+    const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
+    return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
+  };
 
-  // 🤖 AUTO-REMARK GENERATOR
+  const { grandTotal, percentage, finalGrade } = getCalculations(marks, activeClass);
+
   useEffect(() => {
     if (step === 5 && !extraDetails.remark && finalGrade) {
       let autoRemark = "Good effort.";
@@ -167,23 +157,84 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  const getDynamicRank = () => {
-    if (grandTotal === 0) return "";
-    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+  const getClassRank = (myTotal: number, clsName: string) => {
+    if (myTotal === 0) return "";
+    const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
-    allTotals.push(grandTotal); 
+    if (!allTotals.includes(myTotal)) allTotals.push(myTotal); 
     allTotals.sort((a, b) => b - a); 
-    const rank = allTotals.indexOf(grandTotal) + 1;
+    const rank = allTotals.indexOf(myTotal) + 1;
     return rank > 0 ? `${rank}` : "";
   };
 
-  // SUBJECT MANAGER
   const saveSubjects = () => {
     const newConfig = { ...subjectConfig, [activeClass]: tempSubjects };
     setSubjectConfig(newConfig);
     localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
     setShowSubjectModal(false);
     resetMarks();
+  };
+
+  // 🖨️ NATIVE PRINT TRIGGER
+  const triggerPrint = () => {
+    document.title = `${student.name || 'Student'} - Class ${activeClass}`;
+    window.print();
+  };
+
+  // ⬇️ INDIVIDUAL PDF DOWNLOAD
+  const handleSingleDownload = async () => {
+    setIsDownloadingSingle(true);
+    window.scrollTo(0, 0); 
+    const element = document.getElementById('marksheet-print-view');
+    if (element) {
+      try {
+        const html2canvas = (await import('html2canvas')).default;
+        const { jsPDF } = await import('jspdf');
+        const canvas = await html2canvas(element, { scale: 3, useCORS: true, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4'); 
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`${student.name || 'Student'} - Class ${activeClass}.pdf`); 
+      } catch (error) {
+        alert("PDF Error!");
+      }
+    }
+    setIsDownloadingSingle(false);
+  };
+
+  // 📚 BULK CLASS PDF DOWNLOAD (Multi-page PDF)
+  const handleBulkDownload = async () => {
+    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+    if (classStudents.length === 0) return alert("No students in this class to download!");
+    
+    setIsDownloadingBulk(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+      const pdf = new jsPDF('p', 'mm', 'a4'); 
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+
+      for (let i = 0; i < classStudents.length; i++) {
+        setBulkProgress(i + 1);
+        const element = document.getElementById(`bulk-marksheet-${classStudents[i].id}`);
+        if (element) {
+          // Scale 1.5 to prevent memory crash on large classes
+          const canvas = await html2canvas(element, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' });
+          const imgData = canvas.toDataURL('image/jpeg', 0.9);
+          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+          if (i > 0) pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        }
+      }
+      pdf.save(`Class_${activeClass}_All_Marksheets.pdf`);
+    } catch (error) {
+      alert("Error generating bulk PDF!");
+      console.error(error);
+    }
+    setIsDownloadingBulk(false);
+    setBulkProgress(0);
   };
 
 
@@ -194,12 +245,31 @@ export default function MarksheetApp() {
     const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
+        
+        {/* Hidden Bulk Render Container (For html2canvas only) */}
+        <div className="absolute top-[-20000px] left-0 pointer-events-none opacity-0">
+          {classFilteredStudents.map(s => {
+            const calcs = getCalculations(s.marks_data, s.class_name);
+            return (
+              <MarksheetTemplate key={s.id} templateId={`bulk-marksheet-${s.id}`} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
+            )
+          })}
+        </div>
+
+        {/* Loading Overlay for Bulk Download */}
+        {isDownloadingBulk && (
+          <div className="fixed inset-0 bg-black/80 z-[9999] flex flex-col items-center justify-center text-white backdrop-blur-sm">
+            <Loader2 className="animate-spin mb-4" size={64} />
+            <h2 className="text-2xl font-bold mb-2">Generating Master PDF...</h2>
+            <p className="text-gray-300">Processing student {bulkProgress} of {classFilteredStudents.length}</p>
+            <p className="text-xs text-yellow-400 mt-4">Please do not close or switch tabs.</p>
+          </div>
+        )}
+
         <div className="w-full max-w-5xl">
-          
-          {/* Enhanced Branding */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
             <div className="flex items-center gap-4">
-              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md" />
+              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md bg-white rounded-full p-1" />
               <div>
                 <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
                 <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
@@ -207,7 +277,6 @@ export default function MarksheetApp() {
             </div>
           </div>
 
-          {/* Class Folders & Pre-Primary Logic */}
           <div className="mb-6 flex flex-wrap gap-3">
             <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
               <Folder size={18} className={['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? "text-yellow-200" : "text-gray-400"}/> Pre-Primary
@@ -233,18 +302,24 @@ export default function MarksheetApp() {
               <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
               <input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
-            <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50">
-              <Settings size={20} /> Subjects
-            </button>
-            <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-800">
-              <Plus size={20} /> Add to {activeClass}
-            </button>
+            
+            <div className="flex gap-2">
+              <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
+                <Settings size={20} /> Subjects
+              </button>
+              <button onClick={handleBulkDownload} className="bg-green-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-green-700 flex-1 sm:flex-none">
+                <DownloadCloud size={20} /> All PDF
+              </button>
+              <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none">
+                <Plus size={20} /> Add Student
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
             <div className="divide-y divide-gray-100 min-h-[200px]">
-              {isLoadingList ? <div className="p-10 text-center text-gray-400">Loading...</div> : 
+              {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                 classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                 classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
                   <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
@@ -262,7 +337,7 @@ export default function MarksheetApp() {
           </div>
         </div>
 
-        {/* SUBJECT MANAGEMENT MODAL */}
+        {/* SUBJECT MODAL */}
         {showSubjectModal && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
@@ -294,8 +369,26 @@ export default function MarksheetApp() {
   // VIEW 2: SMART WIZARD
   // ==========================================
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col font-sans print:bg-white overflow-x-hidden">
-      <style dangerouslySetInnerHTML={{__html: `@media print { @page { size: A4 portrait; margin: 0; } html, body { width: 210mm !important; height: 297mm !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; -webkit-print-color-adjust: exact !important; background: white !important; } .no-print { display: none !important; } }`}} />
+    <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden print:bg-white">
+      
+      {/* 🛑 BULLETPROOF PRINT CSS */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          @page { size: A4 portrait; margin: 0; }
+          body { margin: 0 !important; padding: 0 !important; background: white !important; }
+          .no-print { display: none !important; }
+          .print-container { 
+            display: block !important; 
+            position: absolute; 
+            top: 0; left: 0; 
+            width: 210mm !important; 
+            height: 297mm !important; 
+            margin: 0; padding: 0; 
+            z-index: 9999; 
+            background: white;
+          }
+        }
+      `}} />
 
       <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center no-print">
         <button onClick={() => setView('dashboard')} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
@@ -355,7 +448,7 @@ export default function MarksheetApp() {
                   <div key={sub} className="flex justify-between items-center bg-gray-50 p-2 rounded border mb-2">
                     <span className="font-bold text-xs">{sub}</span>
                     <div className="flex items-center gap-2">
-                      <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} className="w-16 border p-1 rounded text-center font-bold" />
+                      <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} className="w-16 border p-1 rounded text-center font-bold outline-none focus:border-schoolBlue" />
                       <span className="text-xs font-bold text-gray-400 w-12 text-right">MM: {maxVal}</span>
                     </div>
                   </div>
@@ -365,7 +458,7 @@ export default function MarksheetApp() {
 
             {step === 5 && (
               <>
-                <h2 className="text-xl font-bold mb-4">Final Touches</h2>
+                <h2 className="text-xl font-bold mb-4">Final Touches & Export</h2>
                 <div className="grid grid-cols-2 gap-3 mb-4 border p-4 rounded-xl bg-gray-50">
                   {['sports', 'art', 'music', 'discipline'].map(item => (
                     <div key={item}>
@@ -382,17 +475,23 @@ export default function MarksheetApp() {
                   <div><label className="text-xs font-bold">Issue Date</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border p-2 rounded" /></div>
                   <div className="col-span-2">
                     <label className="text-xs font-bold">Remarks (Auto-filled by Grade)</label>
-                    <input type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border p-2 rounded" />
+                    <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border p-2 rounded" />
+                    <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
                   </div>
                 </div>
 
+                {/* EXPORT BUTTONS */}
                 <div className="mt-8 space-y-3">
                   <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700">
                     {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next Student
                   </button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={()=>saveToCloud(false)} className="bg-schoolBlue text-white p-3 rounded-lg font-bold">Save & Close</button>
-                    <button onClick={() => { document.title = student.name; window.print(); }} className="bg-gray-800 text-white p-3 rounded-lg font-bold flex justify-center gap-2"><Printer size={18}/> Print</button>
+                  <button onClick={()=>saveToCloud(false)} className="w-full bg-schoolBlue text-white p-3 rounded-lg font-bold">Save & Close</button>
+                  
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+                    <button onClick={triggerPrint} className="bg-gray-800 text-white p-3 rounded-lg font-bold flex justify-center gap-2"><Printer size={18}/> Print Format</button>
+                    <button onClick={handleSingleDownload} disabled={isDownloadingSingle} className={`text-white p-3 rounded-lg font-bold flex justify-center gap-2 ${isDownloadingSingle ? 'bg-gray-400' : 'bg-red-600 hover:bg-red-700'}`}>
+                      {isDownloadingSingle ? <Loader2 className="animate-spin" size={18}/> : <Download size={18}/>} Download PDF
+                    </button>
                   </div>
                 </div>
               </>
@@ -405,17 +504,27 @@ export default function MarksheetApp() {
           </div>
         </div>
 
+        {/* LIVE PREVIEW PANE */}
         <div className="w-full lg:w-[55%] bg-gray-800 lg:p-4 flex justify-center overflow-auto no-print">
           <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-            <MarksheetTemplate student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
+            <MarksheetTemplate templateId="marksheet-preview" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
           </div>
         </div>
       </div>
+
+      {/* 🛑 PRINT / DOWNLOAD RENDER CONTAINER (Visible only to printer and html2canvas) */}
+      <div className="hidden print-container">
+        <MarksheetTemplate templateId="marksheet-print-view" student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getDynamicRank()} activeClass={activeClass} />
+      </div>
+
     </div>
   )
 }
 
-function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+// ==========================================
+// MARKSHEET TEMPLATE (With Dynamic ID)
+// ==========================================
+function MarksheetTemplate({ templateId, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -430,7 +539,7 @@ function MarksheetTemplate({ student, marks, subjectsList, grandTotal, percentag
   };
 
   return (
-    <div id="marksheet-template" className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
+    <div id={templateId} className="w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2" style={{ pageBreakInside: 'avoid', pageBreakAfter: 'avoid' }}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.08] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className="relative z-10 h-full w-full border-[6px] border-schoolRed p-[3px] flex flex-col box-border bg-white">
         <div className="border-[2px] border-schoolRed h-full w-full p-4 flex flex-col box-border">
