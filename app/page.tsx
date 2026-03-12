@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react';
 import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
 const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
@@ -55,8 +55,8 @@ export default function MarksheetApp() {
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
 
-  // Replaced dob with category
-  const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", category: "GENERAL", admission: "", gender: "MALE", address: "" });
+  // Removed DOB completely
+  const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", admission: "", gender: "MALE", address: "" });
   const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
@@ -180,8 +180,8 @@ export default function MarksheetApp() {
       setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
       if (addNext) {
         const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        // Reset state but keep address and category defaults
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", category: "GENERAL", admission: "", gender: "MALE", address: student.address });
+        // Reset state but keep address default, removed DOB
+        setStudent({ name: "", roll: nextRoll, mother: "", father: "", admission: "", gender: "MALE", address: student.address });
         resetMarks();
         setStep(1);
         setTimeout(() => setLastSaved(''), 4000);
@@ -503,18 +503,9 @@ export default function MarksheetApp() {
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
+                        {/* Gender retained, DOB removed */}
                         <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
-                        {/* Changed DOB to CATEGORY */}
-                        <div>
-                          <label className="text-xs font-bold text-gray-500">CATEGORY</label>
-                          <select name="category" value={student.category} onChange={(e)=>setStudent({...student, category: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all">
-                            <option value="GENERAL">GENERAL</option>
-                            <option value="OBC">OBC</option>
-                            <option value="SC">SC</option>
-                            <option value="ST">ST</option>
-                            <option value="OTHER">OTHER</option>
-                          </select>
-                        </div>
+                        <div><label className="text-xs font-bold text-gray-500">ADMISSION NO.</label><input type="text" name="admission" value={student.admission} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                         <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                         <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                         <div className="col-span-2">
@@ -660,14 +651,13 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
           </div>
 
           <div className={`${t.bgHighlight} border ${t.border} p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-3 uppercase`}>
+            {/* Grid layout maintained without DOB */}
             <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
             <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
             <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
             <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: {student.admission}</span></div>
             <div className="flex"><span className="w-36">FATHER'S NAME</span><span>: {student.father}</span></div>
-            {/* Changed DATE OF BIRTH to CATEGORY in Result Card */}
-            <div className="flex"><span className="w-32">CATEGORY</span><span>: {student.category || 'GENERAL'}</span></div>
-            <div className="flex"><span className="w-36">GENDER</span><span>: {student.gender}</span></div>
+            <div className="flex"><span className="w-32">GENDER</span><span>: {student.gender}</span></div>
             <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: {student.address}</span></div>
           </div>
 
