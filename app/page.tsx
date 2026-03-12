@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -11,7 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
 
-// 🎨 5 PREMIUM THEME CONFIGURATIONS
+// 🎨 5 PREMIUM THEMES
 const THEMES = {
   classic: { id: 'classic', name: 'Classic Red', border: 'border-red-700', text: 'text-red-700', bg: 'bg-red-700', textSecondary: 'text-blue-900', bgHeader: 'bg-orange-100', bgHighlight: 'bg-cyan-50', ring: 'ring-red-700' },
   emerald: { id: 'emerald', name: 'Emerald Green', border: 'border-emerald-700', text: 'text-emerald-700', bg: 'bg-emerald-700', textSecondary: 'text-slate-800', bgHeader: 'bg-emerald-100', bgHighlight: 'bg-slate-100', ring: 'ring-emerald-700' },
@@ -20,7 +20,6 @@ const THEMES = {
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
 };
 
-// 🛠️ GLOBAL VARIABLES (To prevent Vercel Scope Errors)
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 const maxDobDate = new Date(); 
@@ -31,13 +30,14 @@ type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
 
 export default function MarksheetApp() {
-  // 🔒 AUTH STATES
+  // 🔒 AUTH & NETWORK STATES
   const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isOnline, setIsOnline] = useState(true);
 
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -67,10 +67,28 @@ export default function MarksheetApp() {
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
 
+  // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
   useEffect(() => {
+    // Register Service Worker for Offline Mode
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Registration failed: ', err));
+    }
+    
+    // Check Network Status
+    setIsOnline(navigator.onLine);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); });
-    return () => subscription.unsubscribe();
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      subscription.unsubscribe();
+    }
   }, []);
 
   useEffect(() => {
@@ -82,17 +100,18 @@ export default function MarksheetApp() {
   }, [activeClass]);
 
   const fetchStudentsFromCloud = async () => {
-    if (!session) return;
+    if (!session || !isOnline) { setIsLoadingList(false); return; }
     setIsLoadingList(true);
     const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
     if (data) setDbStudents(data);
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view]);
+  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
 
   const handleLogin = async (e: any) => {
     e.preventDefault();
+    if(!isOnline) return alert("Please connect to internet to Login!");
     setIsLoggingIn(true); setLoginError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setLoginError(error.message);
@@ -117,7 +136,24 @@ export default function MarksheetApp() {
     }
   };
 
+  // 🗑️ DELETE STUDENT ENGINE
+  const deleteStudent = async (id: string, name: string, e: any) => {
+    e.stopPropagation(); // Prevents opening the edit view
+    if(!isOnline) return alert("You must be online to delete records.");
+    if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name}?`)) {
+      setIsLoadingList(true);
+      const { error } = await supabase.from('marks_records').delete().eq('id', id);
+      if (error) {
+        alert("Failed to delete: " + error.message);
+      } else {
+        setDbStudents(prev => prev.filter(s => s.id !== id));
+      }
+      setIsLoadingList(false);
+    }
+  };
+
   const saveToCloud = async (addNext: boolean = false) => {
+    if(!isOnline) return alert("You are offline! Please connect to internet to save data.");
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     
     let myTotal = getCalculations(marks, activeClass).grandTotal;
@@ -217,7 +253,6 @@ export default function MarksheetApp() {
     resetMarks();
   };
 
-  // 🖨️ PERFECT DOM ISOLATED PRINT (Bulletproof Method)
   const triggerSinglePrint = () => {
     document.body.classList.add('printing-single');
     document.title = `${student.name || 'Student'}_Class_${activeClass}`;
@@ -234,6 +269,7 @@ export default function MarksheetApp() {
     setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
 
+
   // ==========================================
   // VIEW 1: LOGIN SCREEN 🔒
   // ==========================================
@@ -242,6 +278,13 @@ export default function MarksheetApp() {
   if (!session) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Offline Banner on Login */}
+        {!isOnline && (
+          <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-bold flex items-center justify-center gap-2 z-50 animate-in slide-in-from-top">
+            <WifiOff size={18}/> No Internet Connection
+          </div>
+        )}
+        
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
         
@@ -264,7 +307,7 @@ export default function MarksheetApp() {
               <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
               <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
             </div>
-            <button type="submit" disabled={isLoggingIn} className="w-full bg-schoolBlue hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95">
+            <button type="submit" disabled={isLoggingIn || !isOnline} className={`w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 ${isOnline ? 'bg-schoolBlue hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'}`}>
               {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
             </button>
           </form>
@@ -280,65 +323,28 @@ export default function MarksheetApp() {
 
   return (
     <>
-      {/* 🛑 THE ULTIMATE STRICT CSS PRINT ENGINE */}
       <style dangerouslySetInnerHTML={{__html: `
-        /* 1. VISUALLY HIDE PRINT CONTAINERS FROM SCREEN (Safe Method) */
-        @media screen {
-          .print-area {
-            position: absolute;
-            left: -9999px;
-            top: -9999px;
-            width: 0;
-            height: 0;
-            overflow: hidden;
-            opacity: 0;
-            pointer-events: none;
-            z-index: -9999;
-          }
-        }
-        
-        /* 2. PRINT MODE OVERRIDES */
+        @media screen { .print-area { position: absolute; left: -9999px; top: -9999px; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; z-index: -9999; } }
         @media print {
           @page { size: A4 portrait; margin: 0 !important; }
           body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          
-          /* CRITICAL: Hide the main app UI entirely when printing */
           #app-ui { display: none !important; }
-          
-          /* Bring print containers back into flow but keep them hidden by default */
-          .print-area { 
-            position: relative !important; 
-            left: 0 !important; 
-            top: 0 !important; 
-            width: 100% !important; 
-            height: auto !important; 
-            overflow: visible !important; 
-            opacity: 1 !important; 
-            display: none !important; 
-          }
-          
-          /* Show ONLY the correct container based on the injected body class */
+          .print-area { position: relative !important; left: 0 !important; top: 0 !important; width: 100% !important; height: auto !important; overflow: visible !important; opacity: 1 !important; display: none !important; }
           body.printing-single #print-single-container { display: block !important; }
           body.printing-bulk #print-bulk-container { display: block !important; }
-          
-          /* Strict 1-Page constraint per marksheet to kill the blank 2nd page */
-          .marksheet-page { 
-            width: 210mm !important; 
-            height: 295mm !important; /* 2mm buffer so it NEVER spills to page 2 */
-            overflow: hidden !important; 
-            page-break-after: always !important; 
-            page-break-inside: avoid !important;
-            margin: 0 auto !important; 
-            padding: 0 !important;
-            box-sizing: border-box !important;
-            background: white !important;
-          }
+          .marksheet-page { width: 210mm !important; height: 295mm !important; overflow: hidden !important; page-break-after: always !important; page-break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; background: white !important; }
           .marksheet-page:last-child { page-break-after: auto !important; }
         }
       `}} />
 
-      {/* 💻 MAIN APP UI */}
       <div id="app-ui">
+        {/* 📶 OFFLINE BANNER */}
+        {!isOnline && (
+          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
+            <WifiOff size={16}/> Offline Mode: Data cannot be saved until internet is restored.
+          </div>
+        )}
+
         {view === 'dashboard' ? (
           <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
             <div className="w-full max-w-5xl">
@@ -357,11 +363,11 @@ export default function MarksheetApp() {
               </div>
 
               <div className="mb-6 flex flex-wrap gap-3">
-                <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
+                <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
                   <Folder size={18} className={['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? "text-yellow-200" : "text-gray-400"}/> Pre-Primary
                 </button>
                 {['1', '2', '3', '4', '5'].map(cls => (
-                  <button key={cls} onClick={() => {setActiveClass(cls); setShowPrePrimary(false);}} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
+                  <button key={cls} onClick={() => {setActiveClass(cls); setShowPrePrimary(false);}} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${activeClass === cls ? 'bg-schoolBlue text-white scale-105 shadow-md' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
                     <Folder size={18} className={activeClass === cls ? "text-yellow-300" : "text-gray-400"}/> Class {cls}
                   </button>
                 ))}
@@ -382,7 +388,6 @@ export default function MarksheetApp() {
                   <input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 </div>
                 
-                {/* 🎨 PREMIUM THEME SWITCHER */}
                 <div className="bg-white border-2 border-gray-200 rounded-xl flex items-center px-4 py-2 shadow-sm gap-3">
                   <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Theme</span>
                   <div className="flex gap-2">
@@ -401,10 +406,10 @@ export default function MarksheetApp() {
                   <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
                     <Settings size={20} /> Subjects
                   </button>
-                  <button onClick={triggerBulkPrint} className="bg-green-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-green-700 flex-1 sm:flex-none">
-                    <DownloadCloud size={20} /> All PDF
+                  <button onClick={triggerBulkPrint} className="bg-gray-800 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-gray-900 flex-1 sm:flex-none active:scale-95 transition-all">
+                    <Printer size={20} /> Bulk Print
                   </button>
-                  <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none">
+                  <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none active:scale-95 transition-all">
                     <Plus size={20} /> Add
                   </button>
                 </div>
@@ -416,7 +421,7 @@ export default function MarksheetApp() {
                   {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                     classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
-                      <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
+                      <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
                         setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
                       }}>
                         <div className="flex items-center gap-4">
@@ -424,8 +429,12 @@ export default function MarksheetApp() {
                           <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold">Edit</span>
-                          <ChevronRight className="text-gray-400" size={16}/>
+                          {/* 🗑️ DELETE BUTTON ADDED BACK HERE */}
+                          <button onClick={(e) => deleteStudent(s.id, s.student_name, e)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
+                            <Trash2 size={18}/>
+                          </button>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold group-hover:bg-blue-100 group-hover:text-schoolBlue transition-colors">Edit</span>
+                          <ChevronRight className="text-gray-400 group-hover:text-schoolBlue" size={16}/>
                         </div>
                       </div>
                     ))
@@ -434,10 +443,9 @@ export default function MarksheetApp() {
               </div>
             </div>
 
-            {/* SUBJECT MODAL */}
             {showSubjectModal && (
               <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+                <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl animate-in zoom-in-95">
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold">Manage Subjects for {activeClass}</h2>
                     <button onClick={() => setShowSubjectModal(false)} className="text-gray-500 hover:text-red-500"><X size={24}/></button>
@@ -452,9 +460,9 @@ export default function MarksheetApp() {
                   </div>
                   <div className="flex gap-2 mb-6">
                     <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
-                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl">Add</button>
+                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
                   </div>
-                  <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800">Save Subject List</button>
+                  <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
                 </div>
               </div>
             )}
@@ -462,7 +470,7 @@ export default function MarksheetApp() {
         ) : (
           <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden">
             <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center">
-              <button onClick={() => {setView('dashboard'); resetMarks();}} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
+              <button onClick={() => {setView('dashboard'); resetMarks();}} className="font-bold flex items-center gap-2 hover:text-schoolBlue transition-colors"><Home size={20}/> Back</button>
               <span className="font-bold text-schoolBlue">{editingId ? 'Editing Student' : 'New Student'} • {activeClass}</span>
             </div>
 
@@ -473,44 +481,44 @@ export default function MarksheetApp() {
 
                 <div className="flex justify-between items-center mb-6 relative">
                   <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2"></div>
-                  <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
+                  <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2 transition-all duration-300" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <div key={s} onClick={() => setStep(s)} className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer transition-all ${step === s ? 'bg-schoolBlue text-white ring-4 ring-blue-100 scale-110' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border-2'}`}>{s}</div>
+                    <div key={s} onClick={() => setStep(s)} className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer transition-all ${step === s ? 'bg-schoolBlue text-white ring-4 ring-blue-100 scale-110' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border-2 hover:border-schoolBlue'}`}>{s}</div>
                   ))}
                 </div>
 
                 <div className="space-y-4">
                   {step === 1 && (
-                    <>
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                       <h2 className="text-xl font-bold mb-4">1. Details & Photo</h2>
                       <div className="flex items-center gap-4 mb-4">
                         <label className="cursor-pointer">
-                          <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative">
+                          <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative transition-colors">
                             {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover object-top" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
                             <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
                           </div>
                         </label>
                         <div className="flex-1 grid grid-cols-2 gap-3">
-                          <div><label className="text-xs font-bold text-gray-500">NAME</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
-                          <div><label className="text-xs font-bold text-gray-500">ROLL NO</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
+                          <div><label className="text-xs font-bold text-gray-500">NAME</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold transition-all" /></div>
+                          <div><label className="text-xs font-bold text-gray-500">ROLL NO</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold transition-all" /></div>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
-                        <div><label className="text-xs font-bold text-gray-500">DOB</label><input type="date" name="dob" value={student.dob} max={maxDobStr} min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold uppercase" /></div>
-                        <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
-                        <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">DOB</label><input type="date" name="dob" value={student.dob} max={maxDobStr} min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold uppercase transition-all" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                         <div className="col-span-2">
                           <label className="text-xs font-bold text-gray-500">ADDRESS</label>
-                          <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" />
+                          <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" />
                           <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {[2, 3, 4].includes(step) && (
-                    <>
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                       <h2 className="text-xl font-bold mb-4 text-schoolBlue">Term {step-1} Marks</h2>
                       {currentSubjectsList.map(sub => {
                         const term = step===2?'t1':step===3?'t2':'t3';
@@ -519,22 +527,22 @@ export default function MarksheetApp() {
                         <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-schoolBlue/30 mb-2 transition-colors">
                           <span className="font-bold text-sm text-gray-700">{sub}</span>
                           <div className="flex items-center gap-2">
-                            <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} placeholder="0" className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50" />
+                            <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} placeholder="0" className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50 transition-all" />
                             <span className="text-xs font-bold text-gray-400 w-12 text-right">/ {maxVal}</span>
                           </div>
                         </div>
                       )})}
-                    </>
+                    </div>
                   )}
 
                   {step === 5 && (
-                    <>
+                    <div className="animate-in fade-in zoom-in-95 duration-300">
                       <h2 className="text-xl font-bold mb-4">Final Touches & Export</h2>
                       <div className="grid grid-cols-2 gap-3 mb-4 border border-blue-100 p-4 rounded-2xl bg-blue-50/50">
                         {['sports', 'art', 'music', 'discipline'].map(item => (
                           <div key={item}>
                             <label className="text-[10px] font-bold uppercase text-gray-500">{item}</label>
-                            <select value={coScholastic[item as keyof CoScholasticState]} onChange={(e)=>setCoScholastic({...coScholastic, [item]: e.target.value})} className="w-full border-2 border-white p-2 rounded-xl font-bold bg-white outline-none focus:border-schoolBlue shadow-sm">
+                            <select value={coScholastic[item as keyof CoScholasticState]} onChange={(e)=>setCoScholastic({...coScholastic, [item]: e.target.value})} className="w-full border-2 border-white p-2 rounded-xl font-bold bg-white outline-none focus:border-schoolBlue shadow-sm transition-all">
                               <option value="A+">A+ (Outstanding)</option><option value="A">A (Excellent)</option>
                               <option value="B+">B+ (Very Good)</option><option value="B">B (Good)</option><option value="C">C (Average)</option>
                             </select>
@@ -542,26 +550,26 @@ export default function MarksheetApp() {
                         ))}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="text-xs font-bold text-gray-500">ATTENDANCE</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
-                        <div><label className="text-xs font-bold text-gray-500">ISSUE DATE</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">ATTENDANCE</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">ISSUE DATE</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" /></div>
                         <div className="col-span-2">
                           <label className="text-xs font-bold text-gray-500">REMARKS</label>
-                          <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" />
+                          <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" />
                           <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
                         </div>
                       </div>
 
                       <div className="mt-8 space-y-3">
-                        <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-lg active:scale-95 transition-all">
+                        <button onClick={() => saveToCloud(true)} disabled={isSaving || !isOnline} className={`w-full text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 shadow-lg active:scale-95 transition-all ${isOnline ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'}`}>
                           {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next
                         </button>
-                        <button onClick={()=>saveToCloud(false)} className="w-full bg-schoolBlue text-white p-3 rounded-xl font-bold hover:bg-blue-800 transition-colors shadow-md">Save & Close</button>
+                        <button onClick={()=>saveToCloud(false)} disabled={!isOnline} className={`w-full text-white p-3 rounded-xl font-bold transition-colors shadow-md ${isOnline ? 'bg-schoolBlue hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'}`}>Save & Close</button>
                         
                         <div className="pt-2 border-t mt-4">
                           <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 shadow-lg active:scale-95 transition-all"><Printer size={20}/> Print / Save PDF (HD)</button>
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 
@@ -574,7 +582,7 @@ export default function MarksheetApp() {
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
                 <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-                  <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
                 </div>
               </div>
             </div>
