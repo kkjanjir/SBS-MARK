@@ -20,7 +20,7 @@ const THEMES = {
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
 };
 
-// 🛠️ FIX: GLOBAL SCOPE VARIABLES (Taaki Vercel Error na de)
+// 🛠️ GLOBAL VARIABLES (To prevent Vercel Scope Errors)
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 const maxDobDate = new Date(); 
@@ -217,21 +217,21 @@ export default function MarksheetApp() {
     resetMarks();
   };
 
-  // 🖨️ PERFECT DOM ISOLATED PRINT
+  // 🖨️ PERFECT DOM ISOLATED PRINT (Bulletproof Method)
   const triggerSinglePrint = () => {
-    document.body.classList.add('print-single');
+    document.body.classList.add('printing-single');
     document.title = `${student.name || 'Student'}_Class_${activeClass}`;
     window.print();
-    document.body.classList.remove('print-single');
+    setTimeout(() => { document.body.classList.remove('printing-single'); }, 1000);
   };
 
   const triggerBulkPrint = () => {
     const classStudents = dbStudents.filter(s => s.class_name === activeClass);
     if (classStudents.length === 0) return alert("No students in this class to print!");
-    document.body.classList.add('print-bulk');
+    document.body.classList.add('printing-bulk');
     document.title = `Class_${activeClass}_All_Marksheets`;
     window.print();
-    document.body.classList.remove('print-bulk');
+    setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
 
   // ==========================================
@@ -282,12 +282,22 @@ export default function MarksheetApp() {
     <>
       {/* 🛑 THE ULTIMATE STRICT CSS PRINT ENGINE */}
       <style dangerouslySetInnerHTML={{__html: `
-        /* Hide print containers from screen view */
+        /* 1. VISUALLY HIDE PRINT CONTAINERS FROM SCREEN (Safe Method) */
         @media screen {
-          #print-single-container, #print-bulk-container { display: none !important; }
+          .print-area {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -9999;
+          }
         }
         
-        /* Print specific overrides */
+        /* 2. PRINT MODE OVERRIDES */
         @media print {
           @page { size: A4 portrait; margin: 0 !important; }
           body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -295,17 +305,26 @@ export default function MarksheetApp() {
           /* CRITICAL: Hide the main app UI entirely when printing */
           #app-ui { display: none !important; }
           
-          /* Hide both print containers by default in print mode */
-          #print-single-container, #print-bulk-container { display: none !important; }
+          /* Bring print containers back into flow but keep them hidden by default */
+          .print-area { 
+            position: relative !important; 
+            left: 0 !important; 
+            top: 0 !important; 
+            width: 100% !important; 
+            height: auto !important; 
+            overflow: visible !important; 
+            opacity: 1 !important; 
+            display: none !important; 
+          }
           
           /* Show ONLY the correct container based on the injected body class */
-          body.print-single #print-single-container { display: block !important; }
-          body.print-bulk #print-bulk-container { display: block !important; }
+          body.printing-single #print-single-container { display: block !important; }
+          body.printing-bulk #print-bulk-container { display: block !important; }
           
           /* Strict 1-Page constraint per marksheet to kill the blank 2nd page */
           .marksheet-page { 
             width: 210mm !important; 
-            height: 295mm !important; 
+            height: 295mm !important; /* 2mm buffer so it NEVER spills to page 2 */
             overflow: hidden !important; 
             page-break-after: always !important; 
             page-break-inside: avoid !important;
@@ -563,18 +582,18 @@ export default function MarksheetApp() {
         )}
       </div>
 
-      {/* 🖨️ THE PRINT ENGINE (Visible ONLY to the Printer) */}
-      <div id="print-single-container">
+      {/* 🖨️ THE PRINT ENGINE (Safely Hidden in DOM, shown via Body Class during Print) */}
+      <div id="print-single-container" className="print-area">
         <div className="marksheet-page">
           <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
         </div>
       </div>
 
-      <div id="print-bulk-container">
-        {classFilteredStudents.map(s => {
+      <div id="print-bulk-container" className="print-area">
+        {classFilteredStudents.map((s, index) => {
           const calcs = getCalculations(s.marks_data, s.class_name);
           return (
-            <div key={s.id} className="marksheet-page">
+            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
               <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
             </div>
           )
