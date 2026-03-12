@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, ChevronRight, Home, Printer, Download, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -11,6 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
 const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
 
+// 🎨 5 PREMIUM THEME CONFIGURATIONS
 const THEMES = {
   classic: { id: 'classic', name: 'Classic Red', border: 'border-red-700', text: 'text-red-700', bg: 'bg-red-700', textSecondary: 'text-blue-900', bgHeader: 'bg-orange-100', bgHighlight: 'bg-cyan-50', ring: 'ring-red-700' },
   emerald: { id: 'emerald', name: 'Emerald Green', border: 'border-emerald-700', text: 'text-emerald-700', bg: 'bg-emerald-700', textSecondary: 'text-slate-800', bgHeader: 'bg-emerald-100', bgHighlight: 'bg-slate-100', ring: 'ring-emerald-700' },
@@ -19,10 +20,18 @@ const THEMES = {
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
 };
 
+// 🛠️ FIX: GLOBAL SCOPE VARIABLES (Taaki Vercel Error na de)
+const currentYear = new Date().getFullYear();
+const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
+const maxDobDate = new Date(); 
+maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
+const maxDobStr = maxDobDate.toISOString().split('T')[0];
+
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
 
 export default function MarksheetApp() {
+  // 🔒 AUTH STATES
   const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,9 +39,7 @@ export default function MarksheetApp() {
   const [loginError, setLoginError] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  const [isOffline, setIsOffline] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-
+  // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,9 +48,6 @@ export default function MarksheetApp() {
   const [activeTheme, setActiveTheme] = useState<'classic'|'emerald'|'royal'|'ocean'|'sunset'>('classic');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // 🖨️ PERFECT PRINT STATE
-  const [printMode, setPrintMode] = useState<'none' | 'single' | 'bulk'>('none');
-
   const [subjectConfig, setSubjectConfig] = useState<Record<string, string[]>>({});
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [tempSubjects, setTempSubjects] = useState<string[]>([]);
@@ -54,10 +58,6 @@ export default function MarksheetApp() {
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
 
-  const currentYear = new Date().getFullYear();
-  const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
-  const maxDobDate = new Date(); maxDobDate.setFullYear(maxDobDate.getFullYear() - 2);
-
   const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", dob: "", admission: "", gender: "MALE", address: "" });
   const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
@@ -66,42 +66,6 @@ export default function MarksheetApp() {
 
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
-
-  // 📱 PWA & OFFLINE REGISTRATION
-  useEffect(() => {
-    // Inject Manifest for Installability
-    if (!document.querySelector('link[rel="manifest"]')) {
-      const link = document.createElement('link');
-      link.rel = 'manifest';
-      link.href = '/manifest.json';
-      document.head.appendChild(link);
-    }
-    // Register Service Worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW setup failed', err));
-    }
-
-    setIsOffline(!navigator.onLine);
-    const handleOnline = () => { setIsOffline(false); syncOfflineData(); };
-    const handleOffline = () => setIsOffline(true);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); }
-  }, []);
-
-  const syncOfflineData = async () => {
-    const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
-    if (queue.length === 0) return;
-    setSyncing(true);
-    for (let item of queue) {
-      if (item.action === 'insert') await supabase.from('marks_records').insert([item.payload]);
-      if (item.action === 'update') await supabase.from('marks_records').update(item.payload).eq('id', item.id);
-      if (item.action === 'delete') await supabase.from('marks_records').delete().eq('id', item.id);
-    }
-    localStorage.removeItem('sbsOfflineQueue');
-    setSyncing(false);
-    fetchStudentsFromCloud();
-  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); });
@@ -120,44 +84,15 @@ export default function MarksheetApp() {
   const fetchStudentsFromCloud = async () => {
     if (!session) return;
     setIsLoadingList(true);
-    if (isOffline) {
-      const cached = localStorage.getItem('sbsCachedStudents');
-      if (cached) setDbStudents(JSON.parse(cached));
-      setIsLoadingList(false); return;
-    }
     const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
-    if (data) { setDbStudents(data); localStorage.setItem('sbsCachedStudents', JSON.stringify(data)); }
+    if (data) setDbStudents(data);
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (session && view === 'dashboard' && printMode === 'none') fetchStudentsFromCloud(); }, [session, view, isOffline, printMode]);
-
-  // 🖨️ THE FOOLPROOF PRINT HANDLERS
-  useEffect(() => {
-    if (printMode !== 'none') {
-      // Allow React to completely render the print container before calling print
-      const timer = setTimeout(() => { window.print(); }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [printMode]);
-
-  useEffect(() => {
-    // Reset print mode automatically when print dialog closes
-    const handleAfterPrint = () => setPrintMode('none');
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => window.removeEventListener('afterprint', handleAfterPrint);
-  }, []);
-
-  const triggerSinglePrint = () => { document.title = `${student.name}_Class_${activeClass}`; setPrintMode('single'); };
-  const triggerBulkPrint = () => { 
-    if(dbStudents.filter(s => s.class_name === activeClass).length === 0) return alert("No students to print!");
-    document.title = `Class_${activeClass}_All_Marksheets`; setPrintMode('bulk'); 
-  };
-
+  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view]);
 
   const handleLogin = async (e: any) => {
     e.preventDefault();
-    if(isOffline) return alert("You are offline. Please connect to internet to login.");
     setIsLoggingIn(true); setLoginError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setLoginError(error.message);
@@ -166,6 +101,7 @@ export default function MarksheetApp() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); setView('dashboard'); };
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
+
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
     let max = term === 't1' ? 40 : term === 't2' ? 60 : 100;
     if (value !== '') { let numVal = Number(value); if (numVal < 0 || numVal > max) return; }
@@ -181,73 +117,70 @@ export default function MarksheetApp() {
     }
   };
 
-  const handleDeleteStudent = async (e: any, id: string, name: string) => {
-    e.stopPropagation();
-    if (!window.confirm(`Delete marksheet for ${name}?`)) return;
-    if (isOffline) {
-      const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
-      queue.push({ action: 'delete', id });
-      localStorage.setItem('sbsOfflineQueue', JSON.stringify(queue));
-      setDbStudents(prev => prev.filter(s => s.id !== id));
-      alert("Deleted locally. Will sync when online."); return;
-    }
-    const { error } = await supabase.from('marks_records').delete().eq('id', id);
-    if (!error) { setDbStudents(prev => prev.filter(s => s.id !== id)); localStorage.setItem('sbsCachedStudents', JSON.stringify(dbStudents.filter(s => s.id !== id))); } 
-    else { alert("Error deleting: " + error.message); }
-  };
-
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
+    
     let myTotal = getCalculations(marks, activeClass).grandTotal;
     const payload = { student_name: student.name, roll_no: student.roll, class_name: activeClass, student_data: { ...student, photo: studentPhoto }, marks_data: marks, extra_data: { ...extraDetails, coScholastic, total: myTotal } };
 
-    if (isOffline) {
-      const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
-      if (editingId) { queue.push({ action: 'update', id: editingId, payload }); setDbStudents(prev => prev.map(s => s.id === editingId ? { ...s, ...payload } : s)); } 
-      else { const tempId = 'local_' + Date.now(); queue.push({ action: 'insert', payload }); setDbStudents(prev => [{ id: tempId, ...payload, created_at: new Date().toISOString() }, ...prev]); }
-      localStorage.setItem('sbsOfflineQueue', JSON.stringify(queue)); localStorage.setItem('sbsCachedStudents', JSON.stringify(dbStudents));
-      alert("Saved Offline."); finishSaveFlow(addNext); return;
+    setIsSaving(true);
+    let error = null;
+
+    if (editingId) {
+      const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId);
+      error = updateError;
+    } else {
+      const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase());
+      if (isDuplicate) {
+        setIsSaving(false);
+        alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) is already saved in Class ${activeClass}!`);
+        return;
+      }
+      const { error: insertError } = await supabase.from('marks_records').insert([payload]);
+      error = insertError;
     }
 
-    setIsSaving(true); let error = null;
-    if (editingId && !editingId.startsWith('local_')) {
-      const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId); error = updateError;
-    } else {
-      const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase() && s.id !== editingId);
-      if (isDuplicate) { setIsSaving(false); alert(`Duplicate Entry!`); return; }
-      const { error: insertError } = await supabase.from('marks_records').insert([payload]); error = insertError;
-    }
     setIsSaving(false);
-    if (error) { alert("Save failed! " + error.message); } else { finishSaveFlow(addNext); }
+    if (error) { alert("Save failed! " + error.message); } 
+    else {
+      setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
+      if (addNext) {
+        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
+        setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
+        resetMarks();
+        setStep(1);
+        setTimeout(() => setLastSaved(''), 4000);
+      } else {
+        setView('dashboard');
+        resetMarks();
+      }
+    }
   };
 
-  const finishSaveFlow = (addNext: boolean) => {
-    setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
-    if (addNext) {
-      const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-      setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
-      resetMarks(); setStep(1); setTimeout(() => setLastSaved(''), 4000);
-    } else { setView('dashboard'); resetMarks(); }
-  }
-
   const resetMarks = () => {
-    setEditingId(null); const initial: MarksState = {};
+    setEditingId(null);
+    const initial: MarksState = {};
     const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
-    setMarks(initial); setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue });
-    setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" }); setStudentPhoto(null);
+    setMarks(initial);
+    setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue });
+    setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
+    setStudentPhoto(null);
   };
 
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return ''; let p = (Number(marksObtained) / maxMarks) * 100;
+    if (marksObtained === '') return '';
+    let p = (Number(marksObtained) / maxMarks) * 100;
     if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
   const getCalculations = (mObj: MarksState, clsName: string) => {
-    const subs = subjectConfig[clsName] || DEFAULT_SUBJECTS; let gTotal = 0;
+    const subs = subjectConfig[clsName] || DEFAULT_SUBJECTS;
+    let gTotal = 0;
     subs.forEach(sub => { gTotal += (Number(mObj[sub]?.t1)||0) + (Number(mObj[sub]?.t2)||0) + (Number(mObj[sub]?.t3)||0); });
-    const mMax = subs.length * 200; const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
+    const mMax = subs.length * 200;
+    const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
     return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
   };
@@ -257,8 +190,10 @@ export default function MarksheetApp() {
   useEffect(() => {
     if (step === 5 && !extraDetails.remark && finalGrade) {
       let autoRemark = "Good effort.";
-      if (finalGrade === 'A1') autoRemark = "Outstanding performance! Keep it up."; else if (finalGrade === 'A2') autoRemark = "Excellent work. Very proud of you.";
-      else if (finalGrade === 'B1' || finalGrade === 'B2') autoRemark = "Good performance. Can do even better."; else if (finalGrade === 'C1' || finalGrade === 'C2') autoRemark = "Average performance. Needs more focus.";
+      if (finalGrade === 'A1') autoRemark = "Outstanding performance! Keep it up.";
+      else if (finalGrade === 'A2') autoRemark = "Excellent work. Very proud of you.";
+      else if (finalGrade === 'B1' || finalGrade === 'B2') autoRemark = "Good performance. Can do even better.";
+      else if (finalGrade === 'C1' || finalGrade === 'C2') autoRemark = "Average performance. Needs more focus.";
       else if (finalGrade === 'D' || finalGrade === 'E') autoRemark = "Needs serious attention and hard work.";
       setExtraDetails(prev => ({ ...prev, remark: autoRemark }));
     }
@@ -269,14 +204,39 @@ export default function MarksheetApp() {
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
     if (!allTotals.includes(myTotal)) allTotals.push(myTotal); 
-    allTotals.sort((a, b) => b - a); return (allTotals.indexOf(myTotal) + 1).toString();
+    allTotals.sort((a, b) => b - a); 
+    const rank = allTotals.indexOf(myTotal) + 1;
+    return rank > 0 ? `${rank}` : "";
   };
 
   const saveSubjects = () => {
     const newConfig = { ...subjectConfig, [activeClass]: tempSubjects };
-    setSubjectConfig(newConfig); localStorage.setItem('sbsSubjects', JSON.stringify(newConfig)); setShowSubjectModal(false); resetMarks();
+    setSubjectConfig(newConfig);
+    localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
+    setShowSubjectModal(false);
+    resetMarks();
   };
 
+  // 🖨️ PERFECT DOM ISOLATED PRINT
+  const triggerSinglePrint = () => {
+    document.body.classList.add('print-single');
+    document.title = `${student.name || 'Student'}_Class_${activeClass}`;
+    window.print();
+    document.body.classList.remove('print-single');
+  };
+
+  const triggerBulkPrint = () => {
+    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+    if (classStudents.length === 0) return alert("No students in this class to print!");
+    document.body.classList.add('print-bulk');
+    document.title = `Class_${activeClass}_All_Marksheets`;
+    window.print();
+    document.body.classList.remove('print-bulk');
+  };
+
+  // ==========================================
+  // VIEW 1: LOGIN SCREEN 🔒
+  // ==========================================
   if (isCheckingAuth) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-schoolBlue" size={48}/></div>;
 
   if (!session) {
@@ -284,19 +244,33 @@ export default function MarksheetApp() {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
-        <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-md relative z-10">
+        
+        <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-md relative z-10 border border-white">
           <div className="text-center mb-8">
-            <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10"><img src="/logo.png" alt="Logo" className="w-full h-full object-contain" /></div>
+            <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+            </div>
             <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
             <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
           </div>
+
           <form onSubmit={handleLogin} className="space-y-5">
             {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
-            {isOffline && <div className="bg-yellow-50 text-yellow-700 p-3 rounded-xl text-sm font-bold text-center flex items-center justify-center gap-2"><WifiOff size={16}/> You are offline</div>}
-            <div className="relative"><UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/><input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" /></div>
-            <div className="relative"><Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/><input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" /></div>
-            <button type="submit" disabled={isLoggingIn || isOffline} className={`w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 ${isOffline ? 'bg-gray-400' : 'bg-schoolBlue hover:bg-blue-800'}`}>{isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}</button>
+            <div className="relative">
+              <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
+              <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
+              <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
+            </div>
+            <button type="submit" disabled={isLoggingIn} className="w-full bg-schoolBlue hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95">
+              {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
+            </button>
           </form>
+          <div className="mt-8 text-center text-xs text-gray-400 font-semibold flex items-center justify-center gap-1">
+            <Lock size={12}/> Protected by Supabase Auth
+          </div>
         </div>
       </div>
     );
@@ -304,35 +278,300 @@ export default function MarksheetApp() {
 
   const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
-  // ==========================================
-  // 🖨️ THE PRINT VIEW (Active when printMode !== 'none')
-  // ==========================================
-  if (printMode !== 'none') {
-    return (
-      <div className="bg-white w-full min-h-screen z-[99999] absolute top-0 left-0">
-        <style dangerouslySetInnerHTML={{__html: `
-          @media print {
-            @page { size: A4 portrait; margin: 0 !important; }
-            body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .no-print { display: none !important; }
-            .marksheet-page { width: 210mm !important; height: 296mm !important; overflow: hidden !important; page-break-after: always !important; box-sizing: border-box !important; }
-            .marksheet-page:last-child { page-break-after: auto !important; }
-          }
-        `}} />
+  return (
+    <>
+      {/* 🛑 THE ULTIMATE STRICT CSS PRINT ENGINE */}
+      <style dangerouslySetInnerHTML={{__html: `
+        /* Hide print containers from screen view */
+        @media screen {
+          #print-single-container, #print-bulk-container { display: none !important; }
+        }
         
-        {/* Failsafe Button in case print dialog gets canceled and state stuck */}
-        <div className="no-print fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-full font-bold shadow-2xl cursor-pointer hover:bg-red-700 z-50 flex items-center gap-2" onClick={() => setPrintMode('none')}>
-           <X size={20}/> Close Print View
-        </div>
-        <div className="no-print text-center py-10 font-bold text-gray-500 animate-pulse">Generating HD Print... Please wait. Do not close.</div>
+        /* Print specific overrides */
+        @media print {
+          @page { size: A4 portrait; margin: 0 !important; }
+          body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          
+          /* CRITICAL: Hide the main app UI entirely when printing */
+          #app-ui { display: none !important; }
+          
+          /* Hide both print containers by default in print mode */
+          #print-single-container, #print-bulk-container { display: none !important; }
+          
+          /* Show ONLY the correct container based on the injected body class */
+          body.print-single #print-single-container { display: block !important; }
+          body.print-bulk #print-bulk-container { display: block !important; }
+          
+          /* Strict 1-Page constraint per marksheet to kill the blank 2nd page */
+          .marksheet-page { 
+            width: 210mm !important; 
+            height: 295mm !important; 
+            overflow: hidden !important; 
+            page-break-after: always !important; 
+            page-break-inside: avoid !important;
+            margin: 0 auto !important; 
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            background: white !important;
+          }
+          .marksheet-page:last-child { page-break-after: auto !important; }
+        }
+      `}} />
 
-        {printMode === 'single' && (
-          <div className="marksheet-page">
-            <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+      {/* 💻 MAIN APP UI */}
+      <div id="app-ui">
+        {view === 'dashboard' ? (
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
+            <div className="w-full max-w-5xl">
+              
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+                <div className="flex items-center gap-4">
+                  <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md bg-white rounded-full p-1" />
+                  <div>
+                    <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
+                    <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
+                  </div>
+                </div>
+                <button onClick={handleLogout} className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100">
+                  <LogOut size={18} /> Logout
+                </button>
+              </div>
+
+              <div className="mb-6 flex flex-wrap gap-3">
+                <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
+                  <Folder size={18} className={['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? "text-yellow-200" : "text-gray-400"}/> Pre-Primary
+                </button>
+                {['1', '2', '3', '4', '5'].map(cls => (
+                  <button key={cls} onClick={() => {setActiveClass(cls); setShowPrePrimary(false);}} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}>
+                    <Folder size={18} className={activeClass === cls ? "text-yellow-300" : "text-gray-400"}/> Class {cls}
+                  </button>
+                ))}
+              </div>
+
+              {showPrePrimary && (
+                <div className="mb-8 flex gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100 animate-in fade-in slide-in-from-top-2">
+                  <span className="text-orange-800 font-bold self-center mr-2 text-sm">Select Sub-Class:</span>
+                  {['NURSERY', 'LKG', 'UKG'].map(cls => (
+                    <button key={cls} onClick={() => setActiveClass(cls)} className={`px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-sm ${activeClass === cls ? 'bg-orange-600 text-white scale-105' : 'bg-white text-orange-800 border border-orange-200 hover:bg-orange-100'}`}>{cls}</button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 mb-8">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
+                  <input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                </div>
+                
+                {/* 🎨 PREMIUM THEME SWITCHER */}
+                <div className="bg-white border-2 border-gray-200 rounded-xl flex items-center px-4 py-2 shadow-sm gap-3">
+                  <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Theme</span>
+                  <div className="flex gap-2">
+                    {Object.values(THEMES).map(t => (
+                      <button 
+                        key={t.id} 
+                        onClick={() => { setActiveTheme(t.id as any); localStorage.setItem('sbsTheme', t.id); }}
+                        className={`w-6 h-6 rounded-full transition-all duration-300 border-2 ${activeTheme === t.id ? 'scale-125 shadow-md border-gray-800' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-110'} ${t.bg}`}
+                        title={t.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
+                    <Settings size={20} /> Subjects
+                  </button>
+                  <button onClick={triggerBulkPrint} className="bg-green-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-green-700 flex-1 sm:flex-none">
+                    <DownloadCloud size={20} /> All PDF
+                  </button>
+                  <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none">
+                    <Plus size={20} /> Add
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
+                <div className="divide-y divide-gray-100 min-h-[200px]">
+                  {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
+                    classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
+                    classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
+                      <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
+                        setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
+                      }}>
+                        <div className="flex items-center gap-4">
+                          {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top border" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
+                          <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold">Edit</span>
+                          <ChevronRight className="text-gray-400" size={16}/>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
+
+            {/* SUBJECT MODAL */}
+            {showSubjectModal && (
+              <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold">Manage Subjects for {activeClass}</h2>
+                    <button onClick={() => setShowSubjectModal(false)} className="text-gray-500 hover:text-red-500"><X size={24}/></button>
+                  </div>
+                  <div className="space-y-2 mb-6 max-h-[40vh] overflow-y-auto">
+                    {tempSubjects.map((sub, idx) => (
+                      <div key={idx} className="flex justify-between items-center bg-gray-50 border p-3 rounded-lg">
+                        <span className="font-bold">{sub}</span>
+                        <button onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={18}/></button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mb-6">
+                    <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
+                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl">Add</button>
+                  </div>
+                  <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800">Save Subject List</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden">
+            <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center">
+              <button onClick={() => {setView('dashboard'); resetMarks();}} className="font-bold flex items-center gap-2"><Home size={20}/> Back</button>
+              <span className="font-bold text-schoolBlue">{editingId ? 'Editing Student' : 'New Student'} • {activeClass}</span>
+            </div>
+
+            <div className="flex-1 flex flex-col lg:flex-row w-full">
+              <div className="w-full lg:w-[45%] bg-white p-6 border-r overflow-y-auto h-[calc(100vh-60px)]">
+                
+                {lastSaved && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded-lg text-sm font-bold text-center animate-pulse">{lastSaved}</div>}
+
+                <div className="flex justify-between items-center mb-6 relative">
+                  <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -z-10 -translate-y-1/2"></div>
+                  <div className="absolute top-1/2 left-0 h-1 bg-schoolBlue -z-10 -translate-y-1/2" style={{ width: `${((step - 1) / 4) * 100}%` }}></div>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <div key={s} onClick={() => setStep(s)} className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer transition-all ${step === s ? 'bg-schoolBlue text-white ring-4 ring-blue-100 scale-110' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border-2'}`}>{s}</div>
+                  ))}
+                </div>
+
+                <div className="space-y-4">
+                  {step === 1 && (
+                    <>
+                      <h2 className="text-xl font-bold mb-4">1. Details & Photo</h2>
+                      <div className="flex items-center gap-4 mb-4">
+                        <label className="cursor-pointer">
+                          <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative">
+                            {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover object-top" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
+                            <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
+                          </div>
+                        </label>
+                        <div className="flex-1 grid grid-cols-2 gap-3">
+                          <div><label className="text-xs font-bold text-gray-500">NAME</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
+                          <div><label className="text-xs font-bold text-gray-500">ROLL NO</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
+                        <div><label className="text-xs font-bold text-gray-500">DOB</label><input type="date" name="dob" value={student.dob} max={maxDobStr} min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold uppercase" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
+                        <div className="col-span-2">
+                          <label className="text-xs font-bold text-gray-500">ADDRESS</label>
+                          <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" />
+                          <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {[2, 3, 4].includes(step) && (
+                    <>
+                      <h2 className="text-xl font-bold mb-4 text-schoolBlue">Term {step-1} Marks</h2>
+                      {currentSubjectsList.map(sub => {
+                        const term = step===2?'t1':step===3?'t2':'t3';
+                        const maxVal = step===2?40:step===3?60:100;
+                        return (
+                        <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-schoolBlue/30 mb-2 transition-colors">
+                          <span className="font-bold text-sm text-gray-700">{sub}</span>
+                          <div className="flex items-center gap-2">
+                            <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} placeholder="0" className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50" />
+                            <span className="text-xs font-bold text-gray-400 w-12 text-right">/ {maxVal}</span>
+                          </div>
+                        </div>
+                      )})}
+                    </>
+                  )}
+
+                  {step === 5 && (
+                    <>
+                      <h2 className="text-xl font-bold mb-4">Final Touches & Export</h2>
+                      <div className="grid grid-cols-2 gap-3 mb-4 border border-blue-100 p-4 rounded-2xl bg-blue-50/50">
+                        {['sports', 'art', 'music', 'discipline'].map(item => (
+                          <div key={item}>
+                            <label className="text-[10px] font-bold uppercase text-gray-500">{item}</label>
+                            <select value={coScholastic[item as keyof CoScholasticState]} onChange={(e)=>setCoScholastic({...coScholastic, [item]: e.target.value})} className="w-full border-2 border-white p-2 rounded-xl font-bold bg-white outline-none focus:border-schoolBlue shadow-sm">
+                              <option value="A+">A+ (Outstanding)</option><option value="A">A (Excellent)</option>
+                              <option value="B+">B+ (Very Good)</option><option value="B">B (Good)</option><option value="C">C (Average)</option>
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div><label className="text-xs font-bold text-gray-500">ATTENDANCE</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">ISSUE DATE</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
+                        <div className="col-span-2">
+                          <label className="text-xs font-bold text-gray-500">REMARKS</label>
+                          <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" />
+                          <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
+                        </div>
+                      </div>
+
+                      <div className="mt-8 space-y-3">
+                        <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-lg active:scale-95 transition-all">
+                          {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next
+                        </button>
+                        <button onClick={()=>saveToCloud(false)} className="w-full bg-schoolBlue text-white p-3 rounded-xl font-bold hover:bg-blue-800 transition-colors shadow-md">Save & Close</button>
+                        
+                        <div className="pt-2 border-t mt-4">
+                          <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 shadow-lg active:scale-95 transition-all"><Printer size={20}/> Print / Save PDF (HD)</button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="mt-8 flex justify-between pt-4 border-t border-gray-200">
+                  <button onClick={() => setStep(s => Math.max(1, s - 1))} className={`px-6 py-2 rounded-xl font-bold transition-all ${step === 1 ? 'text-gray-300' : 'bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-600'}`}>Back</button>
+                  {step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-schoolBlue text-white rounded-xl font-bold shadow-md hover:bg-blue-800 active:scale-95 transition-all">Next</button>}
+                </div>
+              </div>
+
+              <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
+                <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
+                <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
+                  <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+                </div>
+              </div>
+            </div>
           </div>
         )}
+      </div>
 
-        {printMode === 'bulk' && classFilteredStudents.map(s => {
+      {/* 🖨️ THE PRINT ENGINE (Visible ONLY to the Printer) */}
+      <div id="print-single-container">
+        <div className="marksheet-page">
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+        </div>
+      </div>
+
+      <div id="print-bulk-container">
+        {classFilteredStudents.map(s => {
           const calcs = getCalculations(s.marks_data, s.class_name);
           return (
             <div key={s.id} className="marksheet-page">
@@ -341,239 +580,31 @@ export default function MarksheetApp() {
           )
         })}
       </div>
-    );
-  }
-
-  // ==========================================
-  // 💻 THE SCREEN VIEW (Dashboard / Editor)
-  // ==========================================
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col relative font-sans">
-      {isOffline && <div className="bg-yellow-500 text-yellow-900 text-center py-2 font-bold text-sm flex items-center justify-center gap-2 shadow-inner"><WifiOff size={16}/> You are working Offline. Changes are saved locally.</div>}
-      {syncing && <div className="bg-blue-500 text-white text-center py-2 font-bold text-sm flex items-center justify-center gap-2 shadow-inner"><Loader2 size={16} className="animate-spin"/> Syncing offline data to cloud...</div>}
-
-      {view === 'dashboard' ? (
-        <div className="w-full max-w-5xl mx-auto py-8 px-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
-            <div className="flex items-center gap-4">
-              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md bg-white rounded-full p-1" />
-              <div>
-                <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
-                <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
-              </div>
-            </div>
-            <button onClick={handleLogout} className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100"><LogOut size={18} /> Logout</button>
-          </div>
-
-          <div className="mb-6 flex flex-wrap gap-3">
-            <button onClick={() => setShowPrePrimary(!showPrePrimary)} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? 'bg-orange-500 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}><Folder size={18} className={['NURSERY', 'LKG', 'UKG'].includes(activeClass) ? "text-yellow-200" : "text-gray-400"}/> Pre-Primary</button>
-            {['1', '2', '3', '4', '5'].map(cls => (
-              <button key={cls} onClick={() => {setActiveClass(cls); setShowPrePrimary(false);}} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-sm ${activeClass === cls ? 'bg-schoolBlue text-white scale-105' : 'bg-white text-gray-700 border hover:bg-gray-50'}`}><Folder size={18} className={activeClass === cls ? "text-yellow-300" : "text-gray-400"}/> Class {cls}</button>
-            ))}
-          </div>
-
-          {showPrePrimary && (
-            <div className="mb-8 flex gap-3 p-3 bg-orange-50 rounded-xl border border-orange-100 animate-in fade-in slide-in-from-top-2">
-              <span className="text-orange-800 font-bold self-center mr-2 text-sm">Select Sub-Class:</span>
-              {['NURSERY', 'LKG', 'UKG'].map(cls => (
-                <button key={cls} onClick={() => setActiveClass(cls)} className={`px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-sm ${activeClass === cls ? 'bg-orange-600 text-white scale-105' : 'bg-white text-orange-800 border border-orange-200 hover:bg-orange-100'}`}>{cls}</button>
-              ))}
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row gap-3 mb-8">
-            <div className="relative flex-1"><Search className="absolute left-3 top-3.5 text-gray-400" size={20} /><input type="text" placeholder={`Search in ${activeClass}...`} className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-            
-            <div className="bg-white border-2 border-gray-200 rounded-xl flex items-center px-4 py-2 shadow-sm gap-3">
-              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest">Theme</span>
-              <div className="flex gap-2">
-                {Object.values(THEMES).map(t => (<button key={t.id} onClick={() => { setActiveTheme(t.id as any); localStorage.setItem('sbsTheme', t.id); }} className={`w-6 h-6 rounded-full transition-all duration-300 border-2 ${activeTheme === t.id ? 'scale-125 shadow-md border-gray-800' : 'border-transparent opacity-50 hover:opacity-100 hover:scale-110'} ${t.bg}`} title={t.name} />))}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none"><Settings size={20} /> Subjects</button>
-              <button onClick={triggerBulkPrint} className="bg-green-600 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-green-700 flex-1 sm:flex-none"><DownloadCloud size={20} /> All PDF</button>
-              <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none"><Plus size={20} /> Add</button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center"><h3 className="font-bold flex items-center gap-2">Database: {activeClass} {isOffline && <span className="text-yellow-600 text-xs bg-yellow-100 px-2 py-0.5 rounded-full">Offline Mode</span>}</h3><span className="text-xs font-bold text-gray-400">{classFilteredStudents.length} Students</span></div>
-            <div className="divide-y divide-gray-100 min-h-[200px]">
-              {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
-                classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
-                classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
-                  <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group" onClick={() => {
-                    setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
-                  }}>
-                    <div className="flex items-center gap-4">
-                      {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top border" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
-                      <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={(e) => handleDeleteStudent(e, s.id, s.student_name)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete"><Trash2 size={18} /></button>
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold group-hover:bg-schoolBlue group-hover:text-white transition-colors">Edit</span>
-                      <ChevronRight className="text-gray-400" size={16}/>
-                    </div>
-                  </div>
-                ))
-              }
-            </div>
-          </div>
-
-          {showSubjectModal && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
-                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold">Manage Subjects for {activeClass}</h2><button onClick={() => setShowSubjectModal(false)} className="text-gray-500 hover:text-red-500"><X size={24}/></button></div>
-                <div className="space-y-2 mb-6 max-h-[40vh] overflow-y-auto">
-                  {tempSubjects.map((sub, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-gray-50 border p-3 rounded-lg">
-                      <span className="font-bold">{sub}</span><button onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={18}/></button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2 mb-6">
-                  <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
-                  <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl">Add</button>
-                </div>
-                <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800">Save Subject List</button>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col lg:flex-row w-full overflow-hidden">
-          <div className="w-full lg:w-[45%] bg-white p-6 border-r overflow-y-auto flex flex-col h-screen">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b">
-              <button onClick={() => {setView('dashboard'); resetMarks();}} className="font-bold flex items-center gap-2 text-gray-500 hover:text-schoolBlue"><Home size={20}/> Back</button>
-              <span className="font-bold text-schoolBlue">{editingId ? 'Editing Student' : 'New Student'} • {activeClass}</span>
-            </div>
-            
-            {lastSaved && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded-lg text-sm font-bold text-center animate-pulse">{lastSaved}</div>}
-
-            <div className="flex justify-between items-center mb-6 relative px-4">
-              <div className="absolute top-1/2 left-4 right-4 h-1 bg-gray-100 -z-10 -translate-y-1/2"></div>
-              <div className="absolute top-1/2 left-4 h-1 bg-schoolBlue -z-10 -translate-y-1/2 transition-all" style={{ width: `calc(${((step - 1) / 4) * 100}% - 32px)` }}></div>
-              {[1, 2, 3, 4, 5].map((s) => (
-                <div key={s} onClick={() => setStep(s)} className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold cursor-pointer transition-all ${step === s ? 'bg-schoolBlue text-white ring-4 ring-blue-100 scale-110' : step > s ? 'bg-schoolBlue text-white' : 'bg-white text-gray-400 border-2'}`}>{s}</div>
-              ))}
-            </div>
-
-            <div className="space-y-4 flex-1">
-              {step === 1 && (
-                <>
-                  <h2 className="text-xl font-bold mb-4 text-schoolBlue">1. Details & Photo</h2>
-                  <div className="flex items-center gap-4 mb-4">
-                    <label className="cursor-pointer">
-                      <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative">
-                        {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover object-top" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
-                        <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
-                      </div>
-                    </label>
-                    <div className="flex-1 grid grid-cols-2 gap-3">
-                      <div><label className="text-xs font-bold text-gray-500">NAME</label><input type="text" name="name" value={student.name} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
-                      <div><label className="text-xs font-bold text-gray-500">ROLL NO</label><input type="text" name="roll" value={student.roll} onChange={(e)=>setStudent({...student, roll: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl focus:border-schoolBlue outline-none font-bold" /></div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
-                    <div><label className="text-xs font-bold text-gray-500">DOB</label><input type="date" name="dob" value={student.dob} max={maxDobStr} min="2000-01-01" onChange={(e)=>setStudent({...student, dob: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold uppercase" /></div>
-                    <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
-                    <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" /></div>
-                    <div className="col-span-2">
-                      <label className="text-xs font-bold text-gray-500">ADDRESS</label>
-                      <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold" />
-                      <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {[2, 3, 4].includes(step) && (
-                <>
-                  <h2 className="text-xl font-bold mb-4 text-schoolBlue">Term {step-1} Marks</h2>
-                  {currentSubjectsList.map(sub => {
-                    const term = step===2?'t1':step===3?'t2':'t3';
-                    const maxVal = step===2?40:step===3?60:100;
-                    return (
-                    <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-schoolBlue/30 mb-2 transition-colors">
-                      <span className="font-bold text-sm text-gray-700">{sub}</span>
-                      <div className="flex items-center gap-2">
-                        <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} placeholder="0" className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50" />
-                        <span className="text-xs font-bold text-gray-400 w-12 text-right">/ {maxVal}</span>
-                      </div>
-                    </div>
-                  )})}
-                </>
-              )}
-
-              {step === 5 && (
-                <>
-                  <h2 className="text-xl font-bold mb-4 text-schoolBlue">Final Touches & Export</h2>
-                  <div className="grid grid-cols-2 gap-3 mb-4 border border-blue-100 p-4 rounded-2xl bg-blue-50/50">
-                    {['sports', 'art', 'music', 'discipline'].map(item => (
-                      <div key={item}>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">{item}</label>
-                        <select value={coScholastic[item as keyof CoScholasticState]} onChange={(e)=>setCoScholastic({...coScholastic, [item]: e.target.value})} className="w-full border-2 border-white p-2 rounded-xl font-bold bg-white outline-none focus:border-schoolBlue shadow-sm">
-                          <option value="A+">A+ (Outstanding)</option><option value="A">A (Excellent)</option>
-                          <option value="B+">B+ (Very Good)</option><option value="B">B (Good)</option><option value="C">C (Average)</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="text-xs font-bold text-gray-500">ATTENDANCE</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
-                    <div><label className="text-xs font-bold text-gray-500">ISSUE DATE</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" /></div>
-                    <div className="col-span-2">
-                      <label className="text-xs font-bold text-gray-500">REMARKS</label>
-                      <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue" />
-                      <datalist id="remarks-list">{remarksList.map((r,i)=><option key={i} value={r}/>)}</datalist>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full bg-green-600 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-green-700 shadow-lg active:scale-95 transition-all">
-                      {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next
-                    </button>
-                    <button onClick={()=>saveToCloud(false)} className="w-full bg-schoolBlue text-white p-3 rounded-xl font-bold hover:bg-blue-800 transition-colors shadow-md">Save & Close</button>
-                    
-                    <div className="pt-4 border-t border-gray-200">
-                      <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 shadow-lg active:scale-95 transition-all"><Printer size={20}/> Print / Save PDF (HD)</button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="mt-4 flex justify-between pt-4 border-t border-gray-200">
-              <button onClick={() => setStep(s => Math.max(1, s - 1))} className={`px-6 py-2 rounded-xl font-bold transition-all ${step === 1 ? 'text-gray-300' : 'bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-600'}`}>Back</button>
-              {step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-schoolBlue text-white rounded-xl font-bold shadow-md hover:bg-blue-800 active:scale-95 transition-all">Next</button>}
-            </div>
-          </div>
-
-          <div className="w-full lg:w-[55%] bg-gray-800 flex justify-center overflow-auto items-start p-4 lg:p-8">
-            <div className="transform scale-[0.65] sm:scale-75 md:scale-90 lg:scale-[0.80] origin-top">
-              <MarksheetTemplate templateId="preview-only" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   )
 }
 
-function MarksheetTemplate({ templateId, theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+// ==========================================
+// MARKSHEET TEMPLATE
+// ==========================================
+function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
   const getGrade = (m: number | string, max: number) => {
-    if (m === '') return ''; let p = (Number(m) / max) * 100;
+    if (m === '') return '';
+    let p = (Number(m) / max) * 100;
     if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
   };
-  const formatDate = (dateStr: string) => { if (!dateStr) return ""; const [year, month, day] = dateStr.split('-'); return `${day}-${month}-${year}`; };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  };
+
   const t = theme || THEMES.classic; 
 
   return (
-    <div id={templateId} className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl`}>
+    <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
