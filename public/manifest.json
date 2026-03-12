@@ -1,11 +1,17 @@
 {
-  "name": "EduPrime SMS",
-  "short_name": "EduPrime",
+  "name": "SBS Shiksha Niketan",
+  "short_name": "SBS ERP",
+  "description": "EduPrime Marksheet & ERP System",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f9fafb",
+  "background_color": "#ffffff",
   "theme_color": "#1e3a8a",
   "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
     {
       "src": "/logo.png",
       "sizes": "512x512",
