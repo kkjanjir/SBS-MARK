@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut } from 'lucide-react';
+import { Search, Plus, ChevronRight, Home, Printer, Download, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -32,6 +32,10 @@ export default function MarksheetApp() {
   const [loginError, setLoginError] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
+  // 📶 OFFLINE ENGINE STATES
+  const [isOffline, setIsOffline] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
@@ -39,10 +43,8 @@ export default function MarksheetApp() {
   const [activeClass, setActiveClass] = useState<string>('5'); 
   const [showPrePrimary, setShowPrePrimary] = useState(false);
   const [activeTheme, setActiveTheme] = useState<'classic'|'emerald'|'royal'|'ocean'|'sunset'>('classic');
-  
-  // 🛠️ EDIT ENGINE STATE (To prevent duplicates)
   const [editingId, setEditingId] = useState<string | null>(null);
-
+  
   const [subjectConfig, setSubjectConfig] = useState<Record<string, string[]>>({});
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [tempSubjects, setTempSubjects] = useState<string[]>([]);
@@ -67,6 +69,32 @@ export default function MarksheetApp() {
   const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
 
+  // 📶 NETWORK DETECTOR & SYNC ENGINE
+  useEffect(() => {
+    setIsOffline(!navigator.onLine);
+    const handleOnline = () => { setIsOffline(false); syncOfflineData(); };
+    const handleOffline = () => setIsOffline(true);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); }
+  }, []);
+
+  const syncOfflineData = async () => {
+    const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
+    if (queue.length === 0) return;
+    
+    setSyncing(true);
+    for (let item of queue) {
+      if (item.action === 'insert') await supabase.from('marks_records').insert([item.payload]);
+      if (item.action === 'update') await supabase.from('marks_records').update(item.payload).eq('id', item.id);
+      if (item.action === 'delete') await supabase.from('marks_records').delete().eq('id', item.id);
+    }
+    localStorage.removeItem('sbsOfflineQueue');
+    setSyncing(false);
+    fetchStudentsFromCloud();
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); });
@@ -84,15 +112,28 @@ export default function MarksheetApp() {
   const fetchStudentsFromCloud = async () => {
     if (!session) return;
     setIsLoadingList(true);
+    
+    if (isOffline) {
+      // Load from Local Cache if offline
+      const cached = localStorage.getItem('sbsCachedStudents');
+      if (cached) setDbStudents(JSON.parse(cached));
+      setIsLoadingList(false);
+      return;
+    }
+
     const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
-    if (data) setDbStudents(data);
+    if (data) {
+      setDbStudents(data);
+      localStorage.setItem('sbsCachedStudents', JSON.stringify(data)); // Save to cache
+    }
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view]);
+  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOffline]);
 
   const handleLogin = async (e: any) => {
     e.preventDefault();
+    if(isOffline) return alert("You are offline. Please connect to internet to login.");
     setIsLoggingIn(true); setLoginError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setLoginError(error.message);
@@ -117,52 +158,93 @@ export default function MarksheetApp() {
     }
   };
 
-  // 🛡️ SMART SAVE ENGINE (Prevents Duplicates)
+  // 🗑️ DELETE STUDENT ENGINE
+  const handleDeleteStudent = async (e: any, id: string, name: string) => {
+    e.stopPropagation(); // Prevents opening the editor when clicking delete
+    if (!window.confirm(`Are you sure you want to permanently delete the marksheet for ${name}?`)) return;
+
+    if (isOffline) {
+      const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
+      queue.push({ action: 'delete', id });
+      localStorage.setItem('sbsOfflineQueue', JSON.stringify(queue));
+      setDbStudents(prev => prev.filter(s => s.id !== id)); // Remove locally
+      alert("Deleted locally. Will sync when online.");
+      return;
+    }
+
+    const { error } = await supabase.from('marks_records').delete().eq('id', id);
+    if (!error) {
+      setDbStudents(prev => prev.filter(s => s.id !== id));
+      localStorage.setItem('sbsCachedStudents', JSON.stringify(dbStudents.filter(s => s.id !== id)));
+    } else {
+      alert("Error deleting: " + error.message);
+    }
+  };
+
+  // 🛡️ SMART SAVE ENGINE (With Offline Queue)
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     
     let myTotal = getCalculations(marks, activeClass).grandTotal;
     const payload = { student_name: student.name, roll_no: student.roll, class_name: activeClass, student_data: { ...student, photo: studentPhoto }, marks_data: marks, extra_data: { ...extraDetails, coScholastic, total: myTotal } };
 
+    // --- OFFLINE MODE SAVE ---
+    if (isOffline) {
+      const queue = JSON.parse(localStorage.getItem('sbsOfflineQueue') || '[]');
+      if (editingId) {
+        queue.push({ action: 'update', id: editingId, payload });
+        setDbStudents(prev => prev.map(s => s.id === editingId ? { ...s, ...payload } : s));
+      } else {
+        const tempId = 'local_' + Date.now();
+        queue.push({ action: 'insert', payload });
+        setDbStudents(prev => [{ id: tempId, ...payload, created_at: new Date().toISOString() }, ...prev]);
+      }
+      localStorage.setItem('sbsOfflineQueue', JSON.stringify(queue));
+      localStorage.setItem('sbsCachedStudents', JSON.stringify(dbStudents));
+      alert("Saved to Offline Queue. Will upload when network restores.");
+      finishSaveFlow(addNext);
+      return;
+    }
+
+    // --- ONLINE MODE SAVE ---
     setIsSaving(true);
     let error = null;
 
-    if (editingId) {
-      // UPDATE EXISTING
+    if (editingId && !editingId.startsWith('local_')) {
       const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId);
       error = updateError;
     } else {
-      // PREVENT DUPLICATES BEFORE INSERT
-      const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase());
+      const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase() && s.id !== editingId);
       if (isDuplicate) {
         setIsSaving(false);
         alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) is already saved in Class ${activeClass}!`);
         return;
       }
-      // INSERT NEW
       const { error: insertError } = await supabase.from('marks_records').insert([payload]);
       error = insertError;
     }
 
     setIsSaving(false);
     if (error) { alert("Save failed! " + error.message); } 
-    else {
-      setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
-      if (addNext) {
-        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
-        resetMarks();
-        setStep(1);
-        setTimeout(() => setLastSaved(''), 4000);
-      } else {
-        setView('dashboard');
-        resetMarks();
-      }
-    }
+    else { finishSaveFlow(addNext); }
   };
 
+  const finishSaveFlow = (addNext: boolean) => {
+    setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
+    if (addNext) {
+      const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
+      setStudent({ name: "", roll: nextRoll, mother: "", father: "", dob: "", admission: "", gender: "MALE", address: student.address });
+      resetMarks();
+      setStep(1);
+      setTimeout(() => setLastSaved(''), 4000);
+    } else {
+      setView('dashboard');
+      resetMarks();
+    }
+  }
+
   const resetMarks = () => {
-    setEditingId(null); // Reset Edit ID
+    setEditingId(null);
     const initial: MarksState = {};
     const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
@@ -172,7 +254,6 @@ export default function MarksheetApp() {
     setStudentPhoto(null);
   };
 
-  // --- CALCULATIONS ---
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
     let p = (Number(marksObtained) / maxMarks) * 100;
@@ -261,6 +342,8 @@ export default function MarksheetApp() {
 
           <form onSubmit={handleLogin} className="space-y-5">
             {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
+            {isOffline && <div className="bg-yellow-50 text-yellow-700 p-3 rounded-xl text-sm font-bold text-center flex items-center justify-center gap-2"><WifiOff size={16}/> You are offline</div>}
+            
             <div className="relative">
               <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
               <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
@@ -269,7 +352,7 @@ export default function MarksheetApp() {
               <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
               <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
             </div>
-            <button type="submit" disabled={isLoggingIn} className="w-full bg-schoolBlue hover:bg-blue-800 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95">
+            <button type="submit" disabled={isLoggingIn || isOffline} className={`w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 ${isOffline ? 'bg-gray-400' : 'bg-schoolBlue hover:bg-blue-800'}`}>
               {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
             </button>
           </form>
@@ -287,27 +370,22 @@ export default function MarksheetApp() {
     <>
       {/* 🛑 THE ULTIMATE STRICT CSS PRINT ENGINE */}
       <style dangerouslySetInnerHTML={{__html: `
-        /* Hide print containers from screen view */
         @media screen {
           #print-single-container, #print-bulk-container { display: none !important; }
         }
-        
-        /* Print specific overrides */
         @media print {
           @page { size: A4 portrait; margin: 0 !important; }
           body, html { margin: 0 !important; padding: 0 !important; background: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           
-          /* CRITICAL: Hide the main app UI entirely when printing */
+          /* Hide main UI */
           #app-ui { display: none !important; }
           
-          /* Hide both print containers by default in print mode */
+          /* Dynamic print display */
           #print-single-container, #print-bulk-container { display: none !important; }
-          
-          /* Show ONLY the correct container based on the injected body class */
           body.print-single #print-single-container { display: block !important; }
           body.print-bulk #print-bulk-container { display: block !important; }
           
-          /* Strict 1-Page constraint per marksheet to kill the blank 2nd page */
+          /* Perfect A4 Dimensions, no 2nd page spill */
           .marksheet-page { 
             width: 210mm !important; 
             height: 295mm !important; 
@@ -325,8 +403,13 @@ export default function MarksheetApp() {
 
       {/* 💻 MAIN APP UI */}
       <div id="app-ui">
+        
+        {/* 📶 OFFLINE/SYNC BANNER */}
+        {isOffline && <div className="bg-yellow-500 text-yellow-900 text-center py-2 font-bold text-sm flex items-center justify-center gap-2 shadow-inner"><WifiOff size={16}/> You are working Offline. Changes are saved locally.</div>}
+        {syncing && <div className="bg-blue-500 text-white text-center py-2 font-bold text-sm flex items-center justify-center gap-2 shadow-inner"><Loader2 size={16} className="animate-spin"/> Syncing offline data to cloud...</div>}
+
         {view === 'dashboard' ? (
-          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-8 px-4 relative">
             <div className="w-full max-w-5xl">
               
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
@@ -397,12 +480,15 @@ export default function MarksheetApp() {
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
+                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h3 className="font-bold flex items-center gap-2">Database: {activeClass} {isOffline && <span className="text-yellow-600 text-xs bg-yellow-100 px-2 py-0.5 rounded-full">Offline Mode</span>}</h3>
+                  <span className="text-xs font-bold text-gray-400">{classFilteredStudents.length} Students</span>
+                </div>
                 <div className="divide-y divide-gray-100 min-h-[200px]">
                   {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                     classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
-                      <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer" onClick={() => {
+                      <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group" onClick={() => {
                         setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
                       }}>
                         <div className="flex items-center gap-4">
@@ -410,7 +496,11 @@ export default function MarksheetApp() {
                           <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold">Edit</span>
+                          {/* 🗑️ THE NEW DELETE BUTTON */}
+                          <button onClick={(e) => handleDeleteStudent(e, s.id, s.student_name)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                            <Trash2 size={18} />
+                          </button>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold group-hover:bg-schoolBlue group-hover:text-white transition-colors">Edit</span>
                           <ChevronRight className="text-gray-400" size={16}/>
                         </div>
                       </div>
@@ -559,7 +649,7 @@ export default function MarksheetApp() {
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
                 <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+                  <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
                 </div>
               </div>
             </div>
@@ -570,7 +660,7 @@ export default function MarksheetApp() {
       {/* 🖨️ THE HIDDEN PRINT ENGINE CONTAINERS */}
       <div id="print-single-container">
         <div className="marksheet-page">
-          <MarksheetTemplate templateId="print-single" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
         </div>
       </div>
 
@@ -591,7 +681,7 @@ export default function MarksheetApp() {
 // ==========================================
 // MARKSHEET TEMPLATE
 // ==========================================
-function MarksheetTemplate({ templateId, theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -608,7 +698,7 @@ function MarksheetTemplate({ templateId, theme, student, marks, subjectsList, gr
   const t = theme || THEMES.classic; 
 
   return (
-    <div id={templateId} className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
+    <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
