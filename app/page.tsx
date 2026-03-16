@@ -8,7 +8,8 @@ const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'COMPUTER', 'G.K.'];
+// ❌ Computer removed from default subjects
+const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
 const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
 
 // 🎨 5 PREMIUM THEMES
@@ -55,24 +56,23 @@ export default function MarksheetApp() {
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
 
-  // Removed DOB completely
-  const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", admission: "", gender: "MALE", address: "" });
+  // 📝 NEW STATE: Single Subject Entry Tracker
+  const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
+
+  // Removed admission and address
+  const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", gender: "MALE" });
   const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarksState>({});
 
-  const uniqueAddresses = Array.from(new Set(dbStudents.map(s => s.student_data?.address).filter(Boolean)));
   const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
 
   // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
   useEffect(() => {
-    // Register Service Worker for Offline Mode
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Registration failed: ', err));
     }
-    
-    // Check Network Status
     setIsOnline(navigator.onLine);
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -96,6 +96,11 @@ export default function MarksheetApp() {
     if (savedTheme && THEMES[savedTheme]) setActiveTheme(savedTheme);
     resetMarks();
   }, [activeClass]);
+
+  // Reset Active Subject Index when switching steps
+  useEffect(() => {
+    setActiveSubjectIdx(0);
+  }, [step]);
 
   const fetchStudentsFromCloud = async () => {
     if (!session || !isOnline) { setIsLoadingList(false); return; }
@@ -125,6 +130,18 @@ export default function MarksheetApp() {
     setMarks(prev => ({ ...prev, [sub]: { ...(prev[sub] || {t1:'', t2:'', t3:''}), [term]: value } }));
   };
 
+  const handleNextSubject = () => {
+    if (activeSubjectIdx < currentSubjectsList.length - 1) {
+      setActiveSubjectIdx(prev => prev + 1);
+    } else {
+      setStep(s => Math.min(5, s + 1));
+    }
+  };
+
+  const handlePrevSubject = () => {
+    if (activeSubjectIdx > 0) setActiveSubjectIdx(prev => prev - 1);
+  };
+
   const handlePhotoUpload = (e: any) => {
     const file = e.target.files[0];
     if (file) {
@@ -134,18 +151,14 @@ export default function MarksheetApp() {
     }
   };
 
-  // 🗑️ DELETE STUDENT ENGINE
   const deleteStudent = async (id: string, name: string, e: any) => {
-    e.stopPropagation(); // Prevents opening the edit view
+    e.stopPropagation(); 
     if(!isOnline) return alert("You must be online to delete records.");
     if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name}?`)) {
       setIsLoadingList(true);
       const { error } = await supabase.from('marks_records').delete().eq('id', id);
-      if (error) {
-        alert("Failed to delete: " + error.message);
-      } else {
-        setDbStudents(prev => prev.filter(s => s.id !== id));
-      }
+      if (error) { alert("Failed to delete: " + error.message); } 
+      else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
       setIsLoadingList(false);
     }
   };
@@ -180,8 +193,8 @@ export default function MarksheetApp() {
       setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
       if (addNext) {
         const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        // Reset state but keep address default, removed DOB
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", admission: "", gender: "MALE", address: student.address });
+        // Reset state
+        setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
         resetMarks();
         setStep(1);
         setTimeout(() => setLastSaved(''), 4000);
@@ -201,6 +214,7 @@ export default function MarksheetApp() {
     setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue });
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
+    setActiveSubjectIdx(0);
   };
 
   const getGrade = (marksObtained: number | string, maxMarks: number) => {
@@ -277,7 +291,6 @@ export default function MarksheetApp() {
   if (!session) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
-        {/* Offline Banner on Login */}
         {!isOnline && (
           <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-bold flex items-center justify-center gap-2 z-50 animate-in slide-in-from-top">
             <WifiOff size={18}/> No Internet Connection
@@ -292,7 +305,8 @@ export default function MarksheetApp() {
             <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10">
               <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
-            <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
+            {/* Added dots S.B.S. */}
+            <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
             <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
           </div>
 
@@ -337,7 +351,6 @@ export default function MarksheetApp() {
       `}} />
 
       <div id="app-ui">
-        {/* 📶 OFFLINE BANNER */}
         {!isOnline && (
           <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
             <WifiOff size={16}/> Offline Mode: Data cannot be saved until internet is restored.
@@ -352,7 +365,8 @@ export default function MarksheetApp() {
                 <div className="flex items-center gap-4">
                   <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md bg-white rounded-full p-1" />
                   <div>
-                    <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
+                    {/* Added dots S.B.S. */}
+                    <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
                     <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
                   </div>
                 </div>
@@ -428,7 +442,6 @@ export default function MarksheetApp() {
                           <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
                         </div>
                         <div className="flex items-center gap-3">
-                          {/* 🗑️ DELETE BUTTON ADDED BACK HERE */}
                           <button onClick={(e) => deleteStudent(s.id, s.student_name, e)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
                             <Trash2 size={18}/>
                           </button>
@@ -503,37 +516,68 @@ export default function MarksheetApp() {
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
-                        {/* Gender retained, DOB removed */}
                         <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
-                        <div><label className="text-xs font-bold text-gray-500">ADMISSION NO.</label><input type="text" name="admission" value={student.admission} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                         <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
-                        <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
-                        <div className="col-span-2">
-                          <label className="text-xs font-bold text-gray-500">ADDRESS</label>
-                          <input list="addresses" type="text" name="address" value={student.address} onChange={(e)=>setStudent({...student, address: e.target.value.toUpperCase()})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" />
-                          <datalist id="addresses">{uniqueAddresses.map((a:any, i) => <option key={i} value={a}/>)}</datalist>
-                        </div>
+                        <div className="col-span-2"><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                       </div>
                     </div>
                   )}
 
-                  {[2, 3, 4].includes(step) && (
+                  {[2, 3, 4].includes(step) && (() => {
+                    const term = step===2?'t1':step===3?'t2':'t3';
+                    const maxVal = step===2?40:step===3?60:100;
+                    const currentSub = currentSubjectsList[activeSubjectIdx];
+
+                    return (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                      <h2 className="text-xl font-bold mb-4 text-schoolBlue">Term {step-1} Marks</h2>
-                      {currentSubjectsList.map(sub => {
-                        const term = step===2?'t1':step===3?'t2':'t3';
-                        const maxVal = step===2?40:step===3?60:100;
-                        return (
-                        <div key={sub} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-schoolBlue/30 mb-2 transition-colors">
-                          <span className="font-bold text-sm text-gray-700">{sub}</span>
-                          <div className="flex items-center gap-2">
-                            <input type="number" value={marks[sub]?.[term] || ''} onChange={(e) => handleMarkChange(sub, term, e.target.value)} placeholder="0" className="w-20 border-2 border-gray-200 p-2 rounded-lg text-center font-bold outline-none focus:border-schoolBlue focus:bg-blue-50 transition-all" />
-                            <span className="text-xs font-bold text-gray-400 w-12 text-right">/ {maxVal}</span>
-                          </div>
+                      <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold text-schoolBlue">Term {step-1} Marks</h2>
+                        <span className="text-sm font-bold text-gray-400">Sub {activeSubjectIdx + 1}/{currentSubjectsList.length}</span>
+                      </div>
+                      
+                      {/* 🔥 NEW: Smart Single Subject Entry Card */}
+                      <div className="bg-blue-50/50 p-8 rounded-2xl border-2 border-blue-100 flex flex-col items-center justify-center text-center shadow-inner mb-6 transition-all duration-300">
+                        <h3 className="text-3xl font-extrabold text-gray-800 mb-6 uppercase tracking-wider">{currentSub}</h3>
+                        
+                        <div className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                          <input 
+                            autoFocus
+                            key={`input-${step}-${currentSub}`} // Ensures it re-focuses on change
+                            type="number" 
+                            value={marks[currentSub]?.[term] || ''} 
+                            onChange={(e) => handleMarkChange(currentSub, term, e.target.value)} 
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleNextSubject(); } }}
+                            placeholder="0" 
+                            className="w-32 h-16 text-center text-4xl font-black rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue focus:ring-4 focus:ring-blue-100 transition-all text-schoolBlue placeholder-gray-300" 
+                          />
+                          <span className="text-3xl font-bold text-gray-300">/ {maxVal}</span>
                         </div>
-                      )})}
+                        <p className="text-xs font-bold text-gray-400 mt-4 tracking-wide"><kbd className="bg-gray-200 px-2 py-1 rounded text-gray-600">Enter ↵</kbd> to save & next</p>
+
+                        <div className="flex w-full justify-between mt-8">
+                          <button onClick={handlePrevSubject} disabled={activeSubjectIdx === 0} className={`px-5 py-2 rounded-xl font-bold transition-all ${activeSubjectIdx === 0 ? 'opacity-50 cursor-not-allowed bg-gray-200 text-gray-400' : 'bg-white text-gray-700 hover:bg-gray-100 shadow-sm'}`}>
+                            <ChevronLeft size={20} className="inline mr-1"/> Prev
+                          </button>
+                          <button onClick={handleNextSubject} className="bg-schoolBlue text-white px-5 py-2 rounded-xl font-bold hover:bg-blue-800 shadow-md transition-all active:scale-95">
+                            Next <ChevronRight size={20} className="inline ml-1"/>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Mini List for Review */}
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Quick Review</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {currentSubjectsList.map((sub, idx) => (
+                            <div key={sub} onClick={() => setActiveSubjectIdx(idx)} className={`p-2 rounded-lg text-center cursor-pointer border transition-all ${idx === activeSubjectIdx ? 'border-schoolBlue bg-schoolBlue text-white shadow-md scale-105' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                              <div className={`text-[9px] font-bold truncate mb-1 ${idx === activeSubjectIdx ? 'text-blue-200' : 'text-gray-400'}`}>{sub}</div>
+                              <div className="font-extrabold">{marks[sub]?.[term] || '-'}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  )})}
 
                   {step === 5 && (
                     <div className="animate-in fade-in zoom-in-95 duration-300">
@@ -575,7 +619,9 @@ export default function MarksheetApp() {
 
                 <div className="mt-8 flex justify-between pt-4 border-t border-gray-200">
                   <button onClick={() => setStep(s => Math.max(1, s - 1))} className={`px-6 py-2 rounded-xl font-bold transition-all ${step === 1 ? 'text-gray-300' : 'bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-600'}`}>Back</button>
-                  {step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-schoolBlue text-white rounded-xl font-bold shadow-md hover:bg-blue-800 active:scale-95 transition-all">Next</button>}
+                  {/* Next Button logic slightly changed to accommodate smart entry block */}
+                  {step < 5 && step === 1 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-schoolBlue text-white rounded-xl font-bold shadow-md hover:bg-blue-800 active:scale-95 transition-all">Next</button>}
+                  {step > 1 && step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-gray-800 text-white rounded-xl font-bold shadow-md hover:bg-gray-900 active:scale-95 transition-all">Skip to Term {step}</button>}
                 </div>
               </div>
 
@@ -590,7 +636,6 @@ export default function MarksheetApp() {
         )}
       </div>
 
-      {/* 🖨️ THE PRINT ENGINE (Safely Hidden in DOM, shown via Body Class during Print) */}
       <div id="print-single-container" className="print-area">
         <div className="marksheet-page">
           <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
@@ -637,31 +682,32 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
           
           <div className="flex justify-between items-start mb-3">
-            <div className="w-28 h-28 p-1"><img src="/logo.png" className="w-full h-full object-contain" /></div>
-            <div className="text-center flex-1 px-2">
-              <h1 className={`text-[2.2rem] leading-none font-extrabold ${t.text} uppercase tracking-widest drop-shadow-sm`} style={{ fontFamily: 'Georgia, serif' }}>SBS Shiksha Niketan</h1>
-              <p className="font-semibold mt-1 text-[13px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
+            {/* Logo Size Increased w-36 h-36 */}
+            <div className="w-36 h-36 p-1"><img src="/logo.png" className="w-full h-full object-contain" /></div>
+            <div className="text-center flex-1 px-2 pt-2">
+              {/* S.B.S. Updated and Font Size Increased */}
+              <h1 className={`text-[2.8rem] leading-none font-extrabold ${t.text} uppercase tracking-widest drop-shadow-sm`} style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
+              {/* Address Size Increased to text-[16px] */}
+              <p className="font-semibold mt-1.5 text-[16px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
               <div className="mt-3 mb-2 flex justify-center"><span className={`${t.bg} text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ${t.ring} font-bold uppercase text-[11px]`}>PROGRESS EVALUATION REPORT</span></div>
               <p className={`${t.textSecondary} font-extrabold mt-3 text-sm tracking-wide`}>ACADEMIC SESSION : 2025-26</p>
               <p className="font-extrabold text-[15px] mt-1 mb-2">CLASS : {activeClass}</p>
             </div>
-            <div className="w-24 h-28 border-[2px] border-gray-400 flex items-center justify-center bg-gray-50 overflow-hidden">
+            <div className="w-28 h-36 border-[2px] border-gray-400 flex items-center justify-center bg-gray-50 overflow-hidden">
               {photo ? <img src={photo} className="w-full h-full object-cover object-top"/> : <span className="text-gray-400 text-xs text-center font-bold px-2">Upload Photo</span>}
             </div>
           </div>
 
-          <div className={`${t.bgHighlight} border ${t.border} p-2 grid grid-cols-2 gap-x-8 gap-y-1 font-semibold text-[13px] mb-3 uppercase`}>
-            {/* Grid layout maintained without DOB */}
-            <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
+          {/* Admission & Address Removed, Grid Optimized */}
+          <div className={`${t.bgHighlight} border ${t.border} p-2 grid grid-cols-2 gap-x-8 gap-y-2 font-bold text-[13px] mb-3 uppercase`}>
+            <div className="flex"><span className="w-40">STUDENT'S NAME</span><span>: {student.name}</span></div>
             <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
-            <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
-            <div className="flex"><span className="w-32">ADMISSION NO.</span><span>: {student.admission}</span></div>
-            <div className="flex"><span className="w-36">FATHER'S NAME</span><span>: {student.father}</span></div>
+            <div className="flex"><span className="w-40">MOTHER'S NAME</span><span>: {student.mother}</span></div>
             <div className="flex"><span className="w-32">GENDER</span><span>: {student.gender}</span></div>
-            <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: {student.address}</span></div>
+            <div className="flex col-span-2"><span className="w-40">FATHER'S NAME</span><span>: {student.father}</span></div>
           </div>
 
-          <div className="w-full flex-1 mb-3 flex flex-col">
+          <div className="w-full mb-1 flex flex-col">
             <table className={`w-full text-center border-collapse text-[11px] font-bold border-[2px] ${t.border}`}>
               <thead>
                 <tr className={`${t.bgHeader} ${t.text} border-b-[2px] ${t.border}`}>
@@ -697,12 +743,19 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             </table>
           </div>
 
+          {/* 🔥 NEW: Total, Obtained and Percentage Block under marks table */}
+          <div className={`flex justify-between items-center px-4 py-2 mb-4 border-[2px] ${t.border} ${t.bgHighlight} font-bold text-[13px] uppercase`}>
+            <div className="flex gap-2">TOTAL MAXIMUM MARKS : <span className={`${t.text} text-[15px]`}>{subjectsList.length * 200}</span></div>
+            <div className="flex gap-2">TOTAL OBTAINED : <span className={`${t.text} text-[15px]`}>{grandTotal}</span></div>
+            <div className="flex gap-2">PERCENTAGE : <span className={`${t.text} text-[15px]`}>{percentage}%</span></div>
+          </div>
+
           <div className="w-full flex flex-col mt-auto mb-5">
-            <table className="w-full text-[10px] border-[2px] border-black text-center mb-1 font-bold">
+            <table className="w-full text-[10px] border-[2px] border-black text-center mb-2 font-bold">
               <tbody>
                 <tr className={`${t.bgHeader} border-b-[2px] border-black`}>
-                  <td colSpan={2} className="text-left p-1 border-r-[2px] border-black text-black">Co-Scholastic Area</td>
-                  <td colSpan={6} className={`text-right p-1 text-[9px] font-normal ${t.textSecondary}`}>A+: Outstanding A: Excellent B+: Very Good B: Good C: Average</td>
+                  <td colSpan={2} className="text-left p-1.5 border-r-[2px] border-black text-black">Co-Scholastic Area</td>
+                  <td colSpan={6} className={`text-right p-1.5 text-[10px] font-normal ${t.textSecondary}`}>A+: Outstanding | A: Excellent | B+: Very Good | B: Good | C: Average</td>
                 </tr>
                 <tr>
                   <td className="p-1 border-r border-black text-left w-24">Sports & Games</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic.sports}</td>
@@ -736,7 +789,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             </div>
           </div>
 
-          <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm">
+          <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm mt-auto">
             <div className="flex flex-col items-center pt-1 w-32">
               <span className="font-bold mb-1">{formatDate(extra.issueDate)}</span>
               <div className="border-t border-dashed border-black w-full text-center pt-1">Date of Issue</div>
