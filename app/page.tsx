@@ -502,7 +502,6 @@ return (
                   <div className="grid grid-cols-2 gap-3">
                     {/* Gender retained, DOB removed */}
                     <div><label className="text-xs font-bold text-gray-500">GENDER</label><select name="gender" value={student.gender} onChange={(e)=>setStudent({...student, gender: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold"><option>MALE</option><option>FEMALE</option></select></div>
-                    <div><label className="text-xs font-bold text-gray-500">ADMISSION NO.</label><input type="text" name="admission" value={student.admission} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                     <div><label className="text-xs font-bold text-gray-500">FATHER</label><input type="text" name="father" value={student.father} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                     <div><label className="text-xs font-bold text-gray-500">MOTHER</label><input type="text" name="mother" value={student.mother} onChange={handleDetailChange} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold transition-all" /></div>
                     <div className="col-span-2">
@@ -532,8 +531,8 @@ return (
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
-                              const nextInput = document.getElementById(`mark-input-${step}-${idx + 1}`);
-                              if (nextInput) (nextInput as HTMLInputElement).focus();
+                              const next = document.getElementById(`mark-input-${step}-${idx + 1}`);
+                              if (next) (next as HTMLInputElement).focus();
                             }
                           }}
                           placeholder="0"
@@ -669,7 +668,7 @@ return (
         <div className="flex"><span className="w-36">STUDENT'S NAME</span><span>: {student.name}</span></div>
         <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
         <div className="flex"><span className="w-36">MOTHER'S NAME</span><span>: {student.mother}</span></div>
-        <div className="flex"><span className="w-32">FATHER'S NAME</span><span>: {student.father}</span></div>
+        <div className="flex"><span className="w-36">FATHER'S NAME</span><span>: {student.father}</span></div>
         <div className="flex"><span className="w-32">GENDER</span><span>: {student.gender}</span></div>
         <div className="flex col-span-2"><span className="w-36">ADDRESS</span><span>: {student.address}</span></div>
       </div>
@@ -710,27 +709,27 @@ return (
           <tfoot>
             <tr className={`border-t-[3px] ${t.border} ${t.bgHeader} font-extrabold text-[11px]`}>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-left uppercase ${t.text}`}>Total Marks</td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-center`}>{subjectsList.length * 200}</td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`}></td>
               <td className="p-1.5"></td>
             </tr>
             <tr className={`border-t-[2px] ${t.border} ${t.bgHighlight} font-extrabold text-[11px]`}>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-left uppercase ${t.text}`}>Obtained Marks</td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-center font-extrabold text-black`}>{grandTotal > 0 ? grandTotal : ''}</td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`}></td>
               <td className="p-1.5"></td>
             </tr>
             <tr className={`border-t-[2px] ${t.border} ${t.bgHeader} font-extrabold text-[11px]`}>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-left uppercase ${t.text}`}>Percentage</td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
-              <td className={`border-r-[2px] ${t.border} p-1.5 text-center`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
+              <td className={`border-r-[2px] ${t.border} p-1.5`} colSpan={2}></td>
               <td className={`border-r-[2px] ${t.border} p-1.5 text-center font-extrabold ${t.text}`} colSpan={2}>{grandTotal > 0 ? `${percentage}%` : ''}</td>
               <td className="p-1.5"></td>
             </tr>
