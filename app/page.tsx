@@ -282,6 +282,10 @@ export default function MarksheetApp() {
     setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
 
+  // ✅ Clean Variables for the UI to prevent TypeScript Errors in JSX
+  const activeTerm: 't1' | 't2' | 't3' = step === 2 ? 't1' : step === 3 ? 't2' : 't3';
+  const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
+  const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
   // ==========================================
   // VIEW 1: LOGIN SCREEN 🔒
@@ -523,12 +527,8 @@ export default function MarksheetApp() {
                     </div>
                   )}
 
-                  {[2, 3, 4].includes(step) && (() => {
-                    const term = step===2?'t1':step===3?'t2':'t3';
-                    const maxVal = step===2?40:step===3?60:100;
-                    const currentSub = currentSubjectsList[activeSubjectIdx];
-
-                    return (
+                  {/* ✅ Fix applied here: Removed function wrapping for TS compatibility */}
+                  {[2, 3, 4].includes(step) && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                       <div className="flex justify-between items-center mb-4">
                         <h2 className="text-xl font-bold text-schoolBlue">Term {step-1} Marks</h2>
@@ -544,13 +544,13 @@ export default function MarksheetApp() {
                             autoFocus
                             key={`input-${step}-${currentSub}`} // Ensures it re-focuses on change
                             type="number" 
-                            value={marks[currentSub]?.[term] || ''} 
-                            onChange={(e) => handleMarkChange(currentSub, term, e.target.value)} 
+                            value={marks[currentSub]?.[activeTerm] || ''} 
+                            onChange={(e) => handleMarkChange(currentSub, activeTerm, e.target.value)} 
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleNextSubject(); } }}
                             placeholder="0" 
                             className="w-32 h-16 text-center text-4xl font-black rounded-xl border-2 border-gray-200 outline-none focus:border-schoolBlue focus:ring-4 focus:ring-blue-100 transition-all text-schoolBlue placeholder-gray-300" 
                           />
-                          <span className="text-3xl font-bold text-gray-300">/ {maxVal}</span>
+                          <span className="text-3xl font-bold text-gray-300">/ {activeMaxVal}</span>
                         </div>
                         <p className="text-xs font-bold text-gray-400 mt-4 tracking-wide"><kbd className="bg-gray-200 px-2 py-1 rounded text-gray-600">Enter ↵</kbd> to save & next</p>
 
@@ -571,13 +571,13 @@ export default function MarksheetApp() {
                           {currentSubjectsList.map((sub, idx) => (
                             <div key={sub} onClick={() => setActiveSubjectIdx(idx)} className={`p-2 rounded-lg text-center cursor-pointer border transition-all ${idx === activeSubjectIdx ? 'border-schoolBlue bg-schoolBlue text-white shadow-md scale-105' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                               <div className={`text-[9px] font-bold truncate mb-1 ${idx === activeSubjectIdx ? 'text-blue-200' : 'text-gray-400'}`}>{sub}</div>
-                              <div className="font-extrabold">{marks[sub]?.[term] || '-'}</div>
+                              <div className="font-extrabold">{marks[sub]?.[activeTerm] || '-'}</div>
                             </div>
                           ))}
                         </div>
                       </div>
                     </div>
-                  )})}
+                  )}
 
                   {step === 5 && (
                     <div className="animate-in fade-in zoom-in-95 duration-300">
