@@ -355,7 +355,7 @@ export default function MarksheetApp() {
           .print-area { position: relative !important; left: 0 !important; top: 0 !important; width: 100% !important; height: auto !important; overflow: visible !important; opacity: 1 !important; display: none !important; }
           body.printing-single #print-single-container { display: block !important; }
           body.printing-bulk #print-bulk-container { display: block !important; }
-          .marksheet-page { width: 210mm !important; height: 297mm !important; overflow: hidden !important; page-break-after: always !important; page-break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; background: white !important; }
+          .marksheet-page { width: 210mm !important; height: 295mm !important; overflow: hidden !important; page-break-after: always !important; page-break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; background: white !important; }
           .marksheet-page:last-child { page-break-after: auto !important; }
         }
       `}} />
@@ -682,10 +682,10 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
   const t = theme || THEMES.classic; 
 
   return (
-    // ✅ PERFECT A4 PRINT MARGINS: p-[10mm] fixed spacing on all sides. Height 297mm.
-    <div className={`w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-[10mm] ${t.ring} shadow-2xl print:shadow-none print:m-0`}>
+    // ✅ Restored old print settings: h-[295mm], p-2
+    <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
-      <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[4px] flex flex-col box-border bg-white`}>
+      <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
           
           <div className="flex justify-between items-start mb-3">
