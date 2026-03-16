@@ -195,23 +195,29 @@ export default function MarksheetApp() {
         const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
         // Reset state
         setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
-        resetMarks();
+        // Preserve Attendance for Next Record
+        resetMarks(true);
         setStep(1);
         setTimeout(() => setLastSaved(''), 4000);
       } else {
         setView('dashboard');
-        resetMarks();
+        resetMarks(false);
       }
     }
   };
 
-  const resetMarks = () => {
+  // Accepts a parameter to keep attendance intact
+  const resetMarks = (preserveAttendance: boolean = false) => {
     setEditingId(null);
     const initial: MarksState = {};
     const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
-    setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue });
+    setExtraDetails(prev => ({ 
+      attendance: preserveAttendance ? prev.attendance : "", 
+      remark: "", 
+      issueDate: defaultIssue 
+    }));
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
     setActiveSubjectIdx(0);
@@ -263,7 +269,7 @@ export default function MarksheetApp() {
     setSubjectConfig(newConfig);
     localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
     setShowSubjectModal(false);
-    resetMarks();
+    resetMarks(false);
   };
 
   const triggerSinglePrint = () => {
@@ -349,7 +355,7 @@ export default function MarksheetApp() {
           .print-area { position: relative !important; left: 0 !important; top: 0 !important; width: 100% !important; height: auto !important; overflow: visible !important; opacity: 1 !important; display: none !important; }
           body.printing-single #print-single-container { display: block !important; }
           body.printing-bulk #print-bulk-container { display: block !important; }
-          .marksheet-page { width: 210mm !important; height: 295mm !important; overflow: hidden !important; page-break-after: always !important; page-break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; background: white !important; }
+          .marksheet-page { width: 210mm !important; height: 297mm !important; overflow: hidden !important; page-break-after: always !important; page-break-inside: avoid !important; margin: 0 auto !important; padding: 0 !important; box-sizing: border-box !important; background: white !important; }
           .marksheet-page:last-child { page-break-after: auto !important; }
         }
       `}} />
@@ -426,7 +432,7 @@ export default function MarksheetApp() {
                   <button onClick={triggerBulkPrint} className="bg-gray-800 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-gray-900 flex-1 sm:flex-none active:scale-95 transition-all">
                     <Printer size={20} /> Bulk Print
                   </button>
-                  <button onClick={() => { resetMarks(); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none active:scale-95 transition-all">
+                  <button onClick={() => { resetMarks(false); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none active:scale-95 transition-all">
                     <Plus size={20} /> Add
                   </button>
                 </div>
@@ -486,7 +492,7 @@ export default function MarksheetApp() {
         ) : (
           <div className="min-h-screen bg-gray-100 flex flex-col font-sans overflow-x-hidden">
             <div className="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center">
-              <button onClick={() => {setView('dashboard'); resetMarks();}} className="font-bold flex items-center gap-2 hover:text-schoolBlue transition-colors"><Home size={20}/> Back</button>
+              <button onClick={() => {setView('dashboard'); resetMarks(false);}} className="font-bold flex items-center gap-2 hover:text-schoolBlue transition-colors"><Home size={20}/> Back</button>
               <span className="font-bold text-schoolBlue">{editingId ? 'Editing Student' : 'New Student'} • {activeClass}</span>
             </div>
 
@@ -527,7 +533,7 @@ export default function MarksheetApp() {
                     </div>
                   )}
 
-                  {/* ✅ Fix applied here: Removed function wrapping for TS compatibility */}
+                  {/* ✅ Fixed TypeScript Error Logic */}
                   {[2, 3, 4].includes(step) && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                       <div className="flex justify-between items-center mb-4">
@@ -535,7 +541,7 @@ export default function MarksheetApp() {
                         <span className="text-sm font-bold text-gray-400">Sub {activeSubjectIdx + 1}/{currentSubjectsList.length}</span>
                       </div>
                       
-                      {/* 🔥 NEW: Smart Single Subject Entry Card */}
+                      {/* 🔥 Smart Single Subject Entry Card */}
                       <div className="bg-blue-50/50 p-8 rounded-2xl border-2 border-blue-100 flex flex-col items-center justify-center text-center shadow-inner mb-6 transition-all duration-300">
                         <h3 className="text-3xl font-extrabold text-gray-800 mb-6 uppercase tracking-wider">{currentSub}</h3>
                         
@@ -676,18 +682,16 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
   const t = theme || THEMES.classic; 
 
   return (
-    <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
+    // ✅ PERFECT A4 PRINT MARGINS: p-[10mm] fixed spacing on all sides. Height 297mm.
+    <div className={`w-[210mm] h-[297mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-[10mm] ${t.ring} shadow-2xl print:shadow-none print:m-0`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
-      <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
+      <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[4px] flex flex-col box-border bg-white`}>
         <div className={`border-[2px] ${t.border} h-full w-full p-4 flex flex-col box-border`}>
           
           <div className="flex justify-between items-start mb-3">
-            {/* Logo Size Increased w-36 h-36 */}
             <div className="w-36 h-36 p-1"><img src="/logo.png" className="w-full h-full object-contain" /></div>
             <div className="text-center flex-1 px-2 pt-2">
-              {/* S.B.S. Updated and Font Size Increased */}
               <h1 className={`text-[2.8rem] leading-none font-extrabold ${t.text} uppercase tracking-widest drop-shadow-sm`} style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
-              {/* Address Size Increased to text-[16px] */}
               <p className="font-semibold mt-1.5 text-[16px] text-gray-800">Karaspur Prithvipur, Ghazipur, Uttar Pradesh – 233226</p>
               <div className="mt-3 mb-2 flex justify-center"><span className={`${t.bg} text-white px-5 py-1.5 rounded-full ring-2 ring-offset-2 ${t.ring} font-bold uppercase text-[11px]`}>PROGRESS EVALUATION REPORT</span></div>
               <p className={`${t.textSecondary} font-extrabold mt-3 text-sm tracking-wide`}>ACADEMIC SESSION : 2025-26</p>
@@ -698,13 +702,13 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             </div>
           </div>
 
-          {/* Admission & Address Removed, Grid Optimized */}
-          <div className={`${t.bgHighlight} border ${t.border} p-2 grid grid-cols-2 gap-x-8 gap-y-2 font-bold text-[13px] mb-3 uppercase`}>
-            <div className="flex"><span className="w-40">STUDENT'S NAME</span><span>: {student.name}</span></div>
-            <div className="flex"><span className="w-32">ROLL NO.</span><span>: {student.roll}</span></div>
-            <div className="flex"><span className="w-40">MOTHER'S NAME</span><span>: {student.mother}</span></div>
-            <div className="flex"><span className="w-32">GENDER</span><span>: {student.gender}</span></div>
-            <div className="flex col-span-2"><span className="w-40">FATHER'S NAME</span><span>: {student.father}</span></div>
+          {/* ✅ PERFECT ALIGNMENT FOR DETAILS: Fixed width labels, explicit center colons */}
+          <div className={`${t.bgHighlight} border ${t.border} p-3 grid grid-cols-2 gap-x-6 gap-y-2 font-bold text-[13px] mb-3 uppercase`}>
+            <div className="flex items-center"><span className="w-[130px] text-left">STUDENT'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.name}</span></div>
+            <div className="flex items-center"><span className="w-[80px] text-left">ROLL NO.</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.roll}</span></div>
+            <div className="flex items-center"><span className="w-[130px] text-left">MOTHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.mother}</span></div>
+            <div className="flex items-center"><span className="w-[80px] text-left">GENDER</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.gender}</span></div>
+            <div className="flex items-center col-span-2"><span className="w-[130px] text-left">FATHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.father}</span></div>
           </div>
 
           <div className="w-full mb-1 flex flex-col">
@@ -743,7 +747,6 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             </table>
           </div>
 
-          {/* 🔥 NEW: Total, Obtained and Percentage Block under marks table */}
           <div className={`flex justify-between items-center px-4 py-2 mb-4 border-[2px] ${t.border} ${t.bgHighlight} font-bold text-[13px] uppercase`}>
             <div className="flex gap-2">TOTAL MAXIMUM MARKS : <span className={`${t.text} text-[15px]`}>{subjectsList.length * 200}</span></div>
             <div className="flex gap-2">TOTAL OBTAINED : <span className={`${t.text} text-[15px]`}>{grandTotal}</span></div>
