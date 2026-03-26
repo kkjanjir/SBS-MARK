@@ -843,7 +843,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
 
           {showTableWatermark && (
             <div className="relative h-0 flex justify-center pointer-events-none">
-              <img src="/logo.png" alt="" className="w-[480px] h-[480px] object-contain opacity-[0.07] -translate-y-52" />
+              <img src="/logo.png" alt="" className="w-[480px] h-[480px] object-contain opacity-[0.07] -translate-y-[260px]" />
             </div>
           )}
 
