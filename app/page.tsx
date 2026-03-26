@@ -45,6 +45,7 @@ export default function MarksheetApp() {
   const [activeClass, setActiveClass] = useState<string>('5'); 
   const [showPrePrimary, setShowPrePrimary] = useState(false);
   const [activeTheme, setActiveTheme] = useState<'classic'|'emerald'|'royal'|'ocean'|'sunset'>('classic');
+  const [showTableWatermark, setShowTableWatermark] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [subjectConfig, setSubjectConfig] = useState<Record<string, string[]>>({});
@@ -137,6 +138,8 @@ export default function MarksheetApp() {
     if (savedConfig) setSubjectConfig(JSON.parse(savedConfig));
     const savedTheme = localStorage.getItem('sbsTheme') as any;
     if (savedTheme && THEMES[savedTheme]) setActiveTheme(savedTheme);
+    const savedTableWatermark = localStorage.getItem('sbsTableWatermark');
+    setShowTableWatermark(savedTableWatermark === 'true');
     resetMarks();
   }, [activeClass]);
 
@@ -487,6 +490,16 @@ export default function MarksheetApp() {
                 </div>
 
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const nextValue = !showTableWatermark;
+                      setShowTableWatermark(nextValue);
+                      localStorage.setItem('sbsTableWatermark', String(nextValue));
+                    }}
+                    className={`px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all ${showTableWatermark ? 'bg-schoolBlue text-white border-schoolBlue' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <Palette size={18} /> Table Logo
+                  </button>
                   <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
                     <Settings size={20} /> Subjects
                   </button>
@@ -579,6 +592,16 @@ export default function MarksheetApp() {
                         <label className="cursor-pointer">
                           <div className="w-20 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-schoolBlue bg-gray-50 overflow-hidden relative transition-colors">
                             {studentPhoto ? <img src={studentPhoto} className="w-full h-full object-cover object-top" /> : <><ImageIcon size={24} className="text-gray-400 mb-1"/><span className="text-[10px] font-bold text-gray-500">Upload</span></>}
+                            {studentPhoto && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setStudentPhoto(null); }}
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                                aria-label="Remove photo"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
                             <input type="file" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
                           </div>
                         </label>
@@ -696,7 +719,7 @@ export default function MarksheetApp() {
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
                 <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
                 </div>
               </div>
             </div>
@@ -706,7 +729,7 @@ export default function MarksheetApp() {
 
       <div id="print-single-container" className="print-area">
         <div className="marksheet-page">
-          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} />
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
         </div>
       </div>
 
@@ -715,7 +738,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(s.marks_data, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={getClassSubjects(s.class_name, s.marks_data)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={getClassSubjects(s.class_name, s.marks_data)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -727,7 +750,7 @@ export default function MarksheetApp() {
 // ==========================================
 // MARKSHEET TEMPLATE
 // ==========================================
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass }: any) {
+function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -764,7 +787,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
               <div className="w-28 h-36 border-[2px] border-gray-400 flex items-center justify-center bg-gray-50 overflow-hidden">
                 <img src={photo} className="w-full h-full object-cover object-top"/>
               </div>
-            ) : null}
+            ) : <div className="w-28 h-36" />}
           </div>
 
           {/* ✅ PERFECT ALIGNMENT FOR DETAILS: Fixed width labels, explicit center colons */}
@@ -817,6 +840,12 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             <div className="flex gap-2">TOTAL OBTAINED : <span className={`${t.text} text-[15px]`}>{grandTotal}</span></div>
             <div className="flex gap-2">PERCENTAGE : <span className={`${t.text} text-[15px]`}>{percentage}%</span></div>
           </div>
+
+          {showTableWatermark && (
+            <div className="relative h-0 flex justify-center pointer-events-none">
+              <img src="/logo.png" alt="" className="w-28 h-28 object-contain opacity-[0.08] -translate-y-2" />
+            </div>
+          )}
 
           <div className="w-full flex flex-col mt-auto mb-5">
             <table className="w-full text-[10px] border-[2px] border-black text-center mb-2 font-bold">
