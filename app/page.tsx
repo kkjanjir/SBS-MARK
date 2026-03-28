@@ -91,22 +91,24 @@ export default function MarksheetApp() {
 
   const syncOfflineQueue = async () => {
     if (!navigator.onLine) return;
-    const queued = JSON.parse(localStorage.getItem(OFFLINE_MARKS_QUEUE_KEY) || '[]');
-    if (!queued.length) return;
+    try {
+      const queued = JSON.parse(localStorage.getItem(OFFLINE_MARKS_QUEUE_KEY) || '[]');
+      if (!queued.length) return;
 
-    for (const item of queued) {
-      if (item.mode === 'update' && item.id) {
-        const { error } = await supabase.from('marks_records').update(item.payload).eq('id', item.id);
-        if (error) return;
-      } else {
-        const { error } = await supabase.from('marks_records').insert([item.payload]);
-        if (error) return;
+      for (const item of queued) {
+        if (item.mode === 'update' && item.id) {
+          await supabase.from('marks_records').update(item.payload).eq('id', item.id);
+        } else {
+          await supabase.from('marks_records').insert([item.payload]);
+        }
       }
-    }
 
-    localStorage.removeItem(OFFLINE_MARKS_QUEUE_KEY);
-    showNotice('Offline data synced successfully.');
-    fetchStudentsFromCloud();
+      localStorage.removeItem(OFFLINE_MARKS_QUEUE_KEY);
+      showNotice('Offline data synced successfully.');
+      fetchStudentsFromCloud();
+    } catch (err) {
+      console.error("Offline Sync Error:", err);
+    }
   };
 
   // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
@@ -152,12 +154,23 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   }, [step]);
 
+  // ✅ CRASH-PROOF FETCH FUNCTION
   const fetchStudentsFromCloud = async () => {
     if (!session || !isOnline) { setIsLoadingList(false); return; }
     setIsLoadingList(true);
-    const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
-    if (data) setDbStudents(data);
-    setIsLoadingList(false);
+    try {
+      const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.error("Fetch Error:", error.message);
+      } else if (data) {
+        setDbStudents(data);
+      }
+    } catch (err) {
+      console.error("Unexpected fetch error:", err);
+    } finally {
+      // ✅ Yeh line ab hamesha chalegi, spinner kabhi nahi atakega!
+      setIsLoadingList(false);
+    }
   };
 
   useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
@@ -204,12 +217,17 @@ export default function MarksheetApp() {
   const deleteStudent = async (id: string, name: string, e: any) => {
     e.stopPropagation(); 
     if(!isOnline) return alert("You must be online to delete records.");
-    if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name}?`)) {
+    if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name || 'Unknown'}?`)) {
       setIsLoadingList(true);
-      const { error } = await supabase.from('marks_records').delete().eq('id', id);
-      if (error) { alert("Failed to delete: " + error.message); } 
-      else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
-      setIsLoadingList(false);
+      try {
+        const { error } = await supabase.from('marks_records').delete().eq('id', id);
+        if (error) { alert("Failed to delete: " + error.message); } 
+        else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
+      } catch(err) {
+        alert("Unexpected error during delete.");
+      } finally {
+        setIsLoadingList(false);
+      }
     }
   };
 
@@ -237,18 +255,23 @@ export default function MarksheetApp() {
     setIsSaving(true);
     let error = null;
 
-    if (editingId) {
-      const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId);
-      error = updateError;
-    } else {
-      const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase());
-      if (isDuplicate) {
-        setIsSaving(false);
-        alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) is already saved in Class ${activeClass}!`);
-        return;
+    try {
+      if (editingId) {
+        const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId);
+        error = updateError;
+      } else {
+        const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && (s.student_name || '').toUpperCase() === student.name.toUpperCase());
+        if (isDuplicate) {
+          setIsSaving(false);
+          alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) is already saved in Class ${activeClass}!`);
+          return;
+        }
+        const { error: insertError } = await supabase.from('marks_records').insert([payload]);
+        error = insertError;
       }
-      const { error: insertError } = await supabase.from('marks_records').insert([payload]);
-      error = insertError;
+    } catch(err) {
+      console.error(err);
+      error = { message: "Network or Server issue occurred." };
     }
 
     setIsSaving(false);
@@ -294,10 +317,14 @@ export default function MarksheetApp() {
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
-  const getCalculations = (mObj: MarksState, clsName: string) => {
-    const subs = getClassSubjects(clsName, mObj);
+  // ✅ CRASH-PROOF CALCULATIONS
+  const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
+    const safeMObj = mObj || {};
+    const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
-    subs.forEach(sub => { gTotal += (Number(mObj[sub]?.t1)||0) + (Number(mObj[sub]?.t2)||0) + (Number(mObj[sub]?.t3)||0); });
+    subs.forEach(sub => { 
+      gTotal += (Number(safeMObj[sub]?.t1)||0) + (Number(safeMObj[sub]?.t2)||0) + (Number(safeMObj[sub]?.t3)||0); 
+    });
     const mMax = subs.length * 200;
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
@@ -517,13 +544,20 @@ export default function MarksheetApp() {
                 <div className="divide-y divide-gray-100 min-h-[200px]">
                   {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
-                    classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
+                    // ✅ CRASH-PROOF FILTERING
+                    classFilteredStudents.filter(s => (s.student_name || '').toUpperCase().includes(searchQuery.toUpperCase())).map((s) => (
                       <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
-                        setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
+                        setEditingId(s.id); 
+                        setStudent(s.student_data || { name: s.student_name || "", roll: s.roll_no || "", mother: "", father: "", gender: "MALE" }); 
+                        setMarks(s.marks_data || {}); 
+                        setExtraDetails(s.extra_data || extraDetails); 
+                        setCoScholastic(s.extra_data?.coScholastic || coScholastic); 
+                        setStudentPhoto(s.student_data?.photo || null); 
+                        setView('editor');
                       }}>
                         <div className="flex items-center gap-4">
-                          {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top border" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
-                          <div><h4 className="font-bold">{s.student_name}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no}</p></div>
+                          {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top border" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{(s.student_name || 'S').charAt(0)}</div>}
+                          <div><h4 className="font-bold">{s.student_name || 'Unknown'}</h4><p className="text-xs text-gray-500">Roll: {s.roll_no || '-'}</p></div>
                         </div>
                         <div className="flex items-center gap-3">
                           <button onClick={(e) => deleteStudent(s.id, s.student_name, e)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
@@ -735,10 +769,11 @@ export default function MarksheetApp() {
 
       <div id="print-bulk-container" className="print-area">
         {classFilteredStudents.map((s, index) => {
-          const calcs = getCalculations(s.marks_data, s.class_name);
+          const safeMarks = s.marks_data || {};
+          const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={getClassSubjects(s.class_name, s.marks_data)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -790,13 +825,13 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             ) : <div className="w-28 h-36" />}
           </div>
 
-          {/* ✅ PERFECT ALIGNMENT FOR DETAILS: Fixed width labels, explicit center colons */}
+          {/* ✅ CRASH-PROOF DETAILS WITH OPTIONAL CHAINING (?.) */}
           <div className={`${t.bgHighlight} border ${t.border} p-3 grid grid-cols-2 gap-x-6 gap-y-2 font-bold text-[13px] mb-3 uppercase`}>
-            <div className="flex items-center"><span className="w-[130px] text-left">STUDENT'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.name}</span></div>
-            <div className="flex items-center"><span className="w-[80px] text-left">ROLL NO.</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.roll}</span></div>
-            <div className="flex items-center"><span className="w-[130px] text-left">MOTHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.mother}</span></div>
-            <div className="flex items-center"><span className="w-[80px] text-left">GENDER</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.gender}</span></div>
-            <div className="flex items-center col-span-2"><span className="w-[130px] text-left">FATHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student.father}</span></div>
+            <div className="flex items-center"><span className="w-[130px] text-left">STUDENT'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.name || ''}</span></div>
+            <div className="flex items-center"><span className="w-[80px] text-left">ROLL NO.</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.roll || ''}</span></div>
+            <div className="flex items-center"><span className="w-[130px] text-left">MOTHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.mother || ''}</span></div>
+            <div className="flex items-center"><span className="w-[80px] text-left">GENDER</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.gender || ''}</span></div>
+            <div className="flex items-center col-span-2"><span className="w-[130px] text-left">FATHER'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.father || ''}</span></div>
           </div>
 
           <div className="w-full mb-1 flex flex-col">
@@ -819,7 +854,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
               </thead>
               <tbody className={t.textSecondary}>
                 {resolvedSubjects.map((sub: string, i: number) => {
-                  let subData = marks[sub] || {}; let tot = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
+                  let subData = (marks || {})[sub] || {}; let tot = (Number(subData.t1)||0) + (Number(subData.t2)||0) + (Number(subData.t3)||0);
                   return (
                     <tr key={i} className={`border-b-[2px] ${t.border}`}>
                       <td className={`border-r-[2px] ${t.border} p-1.5 text-left text-black`}>{sub}</td>
@@ -855,10 +890,10 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
                   <td colSpan={6} className={`text-right p-1.5 text-[10px] font-normal ${t.textSecondary}`}>A+: Outstanding | A: Excellent | B+: Very Good | B: Good | C: Average</td>
                 </tr>
                 <tr>
-                  <td className="p-1 border-r border-black text-left w-24">Sports & Games</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic.sports}</td>
-                  <td className="p-1 border-r border-black text-left w-24">Art & Craft</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic.art}</td>
-                  <td className="p-1 border-r border-black text-left w-24">Music & Dance</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic.music}</td>
-                  <td className="p-1 border-r border-black text-left w-24">Discipline</td><td className={`p-1 border-black w-10 ${t.text} text-xs`}>{coScholastic.discipline}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Sports & Games</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic?.sports || ''}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Art & Craft</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic?.art || ''}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Music & Dance</td><td className={`p-1 border-r-[2px] border-black w-10 ${t.text} text-xs`}>{coScholastic?.music || ''}</td>
+                  <td className="p-1 border-r border-black text-left w-24">Discipline</td><td className={`p-1 border-black w-10 ${t.text} text-xs`}>{coScholastic?.discipline || ''}</td>
                 </tr>
               </tbody>
             </table>
@@ -880,15 +915,15 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             </table>
             
             <div className={`flex justify-between text-[11px] font-bold mt-5 ${t.textSecondary}`}>
-              <div>Remark : <span className={`border-b border-black inline-block min-w-[200px] ${t.text} uppercase px-2`}>{extra.remark}</span></div>
-              <div>Attendance : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2`}>{extra.attendance}</span></div>
+              <div>Remark : <span className={`border-b border-black inline-block min-w-[200px] ${t.text} uppercase px-2`}>{extra?.remark || ''}</span></div>
+              <div>Attendance : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2`}>{extra?.attendance || ''}</span></div>
               <div>Class Rank : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2 text-sm`}>{rank}</span></div>
             </div>
           </div>
 
           <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm mt-auto">
             <div className="flex flex-col items-center pt-1 w-32">
-              <span className="font-bold mb-1">{formatDate(extra.issueDate)}</span>
+              <span className="font-bold mb-1">{formatDate(extra?.issueDate)}</span>
               <div className="border-t border-dashed border-black w-full text-center pt-1">Date of Issue</div>
             </div>
             <div className="flex flex-col items-center">
@@ -906,3 +941,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     </div>
   )
 }
+
