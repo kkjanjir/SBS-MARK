@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi, RefreshCw, Cloud } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -8,6 +8,7 @@ const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 const OFFLINE_MARKS_QUEUE_KEY = 'sbsOfflineMarksQueue';
+const LOCAL_CACHE_KEY = 'sbs_students_cache';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -37,6 +38,7 @@ export default function MarksheetApp() {
   const [loginError, setLoginError] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false); // 🔥 NEW: Background Sync Tracker
 
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -55,14 +57,12 @@ export default function MarksheetApp() {
 
   const [dbStudents, setDbStudents] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
   const [notice, setNotice] = useState('');
 
-  // 📝 NEW STATE: Single Subject Entry Tracker
+  // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
 
-  // Removed admission and address
   const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", gender: "MALE" });
   const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
@@ -94,6 +94,7 @@ export default function MarksheetApp() {
     try {
       const queued = JSON.parse(localStorage.getItem(OFFLINE_MARKS_QUEUE_KEY) || '[]');
       if (!queued.length) return;
+      setIsSyncing(true);
 
       for (const item of queued) {
         if (item.mode === 'update' && item.id) {
@@ -108,19 +109,24 @@ export default function MarksheetApp() {
       fetchStudentsFromCloud();
     } catch (err) {
       console.error("Offline Sync Error:", err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
+  // 🌐 AUTH & CACHE INITIALIZATION
   useEffect(() => {
+    // 🔥 LOAD INSTANT CACHE ON MOUNT
+    const cachedData = localStorage.getItem(LOCAL_CACHE_KEY);
+    if (cachedData) {
+      setDbStudents(JSON.parse(cachedData));
+    }
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Registration failed: ', err));
     }
     setIsOnline(navigator.onLine);
-    const handleOnline = () => {
-      setIsOnline(true);
-      syncOfflineQueue();
-    };
+    const handleOnline = () => { setIsOnline(true); syncOfflineQueue(); };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -149,30 +155,28 @@ export default function MarksheetApp() {
     if (session && isOnline) syncOfflineQueue();
   }, [session, isOnline]);
 
-  // Reset Active Subject Index when switching steps
-  useEffect(() => {
-    setActiveSubjectIdx(0);
-  }, [step]);
+  useEffect(() => { setActiveSubjectIdx(0); }, [step]);
 
-  // ✅ CRASH-PROOF FETCH FUNCTION
+  // 🔥 ADVANCED FETCH WITH BACKGROUND SYNC
   const fetchStudentsFromCloud = async () => {
-    if (!session || !isOnline) { setIsLoadingList(false); return; }
-    setIsLoadingList(true);
+    if (!session || !isOnline) return;
+    setIsSyncing(true); // Sirf upar chhota spinner ghoomega, page nahi rukega
     try {
       const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
       if (error) {
         console.error("Fetch Error:", error.message);
       } else if (data) {
         setDbStudents(data);
+        localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data)); // Cache update kar do
       }
     } catch (err) {
       console.error("Unexpected fetch error:", err);
     } finally {
-      // ✅ Yeh line ab hamesha chalegi, spinner kabhi nahi atakega!
-      setIsLoadingList(false);
+      setIsSyncing(false);
     }
   };
 
+  // Har baar jab dashboard khulega toh chupke se background mein sync hoga
   useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
 
   const handleLogin = async (e: any) => {
@@ -194,11 +198,8 @@ export default function MarksheetApp() {
   };
 
   const handleNextSubject = () => {
-    if (activeSubjectIdx < currentSubjectsList.length - 1) {
-      setActiveSubjectIdx(prev => prev + 1);
-    } else {
-      setStep(s => Math.min(5, s + 1));
-    }
+    if (activeSubjectIdx < currentSubjectsList.length - 1) setActiveSubjectIdx(prev => prev + 1);
+    else setStep(s => Math.min(5, s + 1));
   };
 
   const handlePrevSubject = () => {
@@ -218,15 +219,22 @@ export default function MarksheetApp() {
     e.stopPropagation(); 
     if(!isOnline) return alert("You must be online to delete records.");
     if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name || 'Unknown'}?`)) {
-      setIsLoadingList(true);
+      setIsSyncing(true);
+      // 🔥 Optimistic Delete (Turant UI se hatao)
+      const newData = dbStudents.filter(s => s.id !== id);
+      setDbStudents(newData);
+      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(newData));
+
       try {
         const { error } = await supabase.from('marks_records').delete().eq('id', id);
-        if (error) { alert("Failed to delete: " + error.message); } 
-        else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
+        if (error) { 
+          alert("Failed to delete from Cloud: " + error.message); 
+          fetchStudentsFromCloud(); // Revert back if error
+        }
       } catch(err) {
         alert("Unexpected error during delete.");
       } finally {
-        setIsLoadingList(false);
+        setIsSyncing(false);
       }
     }
   };
@@ -240,15 +248,7 @@ export default function MarksheetApp() {
     if (!navigator.onLine) {
       savePayloadOffline({ mode: editingId ? 'update' : 'insert', id: editingId || undefined, payload });
       showNotice('Saved offline. Will sync automatically when internet is restored.');
-      if (addNext) {
-        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
-        resetMarks(true);
-        setStep(1);
-      } else {
-        setView('dashboard');
-        resetMarks(false);
-      }
+      proceedAfterSave(addNext);
       return;
     }
 
@@ -278,33 +278,31 @@ export default function MarksheetApp() {
     if (error) { alert("Save failed! " + error.message); } 
     else {
       setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
-      if (addNext) {
-        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        // Reset state
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
-        // Preserve Attendance for Next Record
-        resetMarks(true);
-        setStep(1);
-        setTimeout(() => setLastSaved(''), 4000);
-      } else {
-        setView('dashboard');
-        resetMarks(false);
-      }
+      fetchStudentsFromCloud(); // Sync newly saved data quietly
+      proceedAfterSave(addNext);
     }
   };
 
-  // Accepts a parameter to keep attendance intact
+  const proceedAfterSave = (addNext: boolean) => {
+    if (addNext) {
+      const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
+      setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
+      resetMarks(true);
+      setStep(1);
+      setTimeout(() => setLastSaved(''), 4000);
+    } else {
+      setView('dashboard');
+      resetMarks(false);
+    }
+  }
+
   const resetMarks = (preserveAttendance: boolean = false) => {
     setEditingId(null);
     const initial: MarksState = {};
     const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
-    setExtraDetails(prev => ({ 
-      attendance: preserveAttendance ? prev.attendance : "", 
-      remark: "", 
-      issueDate: defaultIssue 
-    }));
+    setExtraDetails(prev => ({ attendance: preserveAttendance ? prev.attendance : "", remark: "", issueDate: defaultIssue }));
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
     setActiveSubjectIdx(0);
@@ -317,14 +315,11 @@ export default function MarksheetApp() {
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
-  // ✅ CRASH-PROOF CALCULATIONS
   const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
-    subs.forEach(sub => { 
-      gTotal += (Number(safeMObj[sub]?.t1)||0) + (Number(safeMObj[sub]?.t2)||0) + (Number(safeMObj[sub]?.t3)||0); 
-    });
+    subs.forEach(sub => { gTotal += (Number(safeMObj[sub]?.t1)||0) + (Number(safeMObj[sub]?.t2)||0) + (Number(safeMObj[sub]?.t3)||0); });
     const mMax = subs.length * 200;
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
@@ -379,7 +374,6 @@ export default function MarksheetApp() {
     setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
 
-  // ✅ Clean Variables for the UI to prevent TypeScript Errors in JSX
   const activeTerm: 't1' | 't2' | 't3' = step === 2 ? 't1' : step === 3 ? 't2' : 't3';
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
@@ -406,7 +400,6 @@ export default function MarksheetApp() {
             <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10">
               <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
-            {/* Added dots S.B.S. */}
             <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
             <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
           </div>
@@ -453,20 +446,26 @@ export default function MarksheetApp() {
 
       <div id="app-ui">
         {!isOnline && (
-          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
+          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm z-50">
             <WifiOff size={16}/> Offline Mode: Data cannot be saved until internet is restored.
           </div>
         )}
 
+        {/* 🔥 NEW: Sync Status Bar at the Top */}
+        {isOnline && view === 'dashboard' && (
+           <div className={`text-xs text-center py-1 transition-all flex justify-center items-center gap-1.5 font-bold ${isSyncing ? 'bg-blue-100 text-schoolBlue' : 'bg-green-100 text-green-700'}`}>
+              {isSyncing ? <><RefreshCw size={12} className="animate-spin"/> Syncing Database...</> : <><Cloud size={12}/> Cloud Data Up to Date</>}
+           </div>
+        )}
+
         {view === 'dashboard' ? (
-          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-8 px-4 relative">
             <div className="w-full max-w-5xl">
               
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
                 <div className="flex items-center gap-4">
                   <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain drop-shadow-md bg-white rounded-full p-1" />
                   <div>
-                    {/* Added dots S.B.S. */}
                     <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
                     <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
                   </div>
@@ -540,11 +539,14 @@ export default function MarksheetApp() {
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
+                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center">
+                  <h3 className="font-bold">Database: {activeClass}</h3>
+                  <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded-md">{classFilteredStudents.length} Records</span>
+                </div>
                 <div className="divide-y divide-gray-100 min-h-[200px]">
-                  {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
+                  {/* 🔥 NO MORE BLOCKING LOADING SPINNER. ONLY EMPTY STATE IF NO CACHE */}
+                  {dbStudents.length === 0 && isSyncing ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Syncing with Cloud...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
-                    // ✅ CRASH-PROOF FILTERING
                     classFilteredStudents.filter(s => (s.student_name || '').toUpperCase().includes(searchQuery.toUpperCase())).map((s) => (
                       <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
                         setEditingId(s.id); 
@@ -652,7 +654,6 @@ export default function MarksheetApp() {
                     </div>
                   )}
 
-                  {/* ✅ Fixed TypeScript Error Logic */}
                   {[2, 3, 4].includes(step) && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                       <div className="flex justify-between items-center mb-4">
@@ -660,14 +661,13 @@ export default function MarksheetApp() {
                         <span className="text-sm font-bold text-gray-400">Sub {activeSubjectIdx + 1}/{currentSubjectsList.length}</span>
                       </div>
                       
-                      {/* 🔥 Smart Single Subject Entry Card */}
                       <div className="bg-blue-50/50 p-8 rounded-2xl border-2 border-blue-100 flex flex-col items-center justify-center text-center shadow-inner mb-6 transition-all duration-300">
                         <h3 className="text-3xl font-extrabold text-gray-800 mb-6 uppercase tracking-wider">{currentSub}</h3>
                         
                         <div className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
                           <input 
                             autoFocus
-                            key={`input-${step}-${currentSub}`} // Ensures it re-focuses on change
+                            key={`input-${step}-${currentSub}`} 
                             type="number" 
                             value={marks[currentSub]?.[activeTerm] || ''} 
                             onChange={(e) => handleMarkChange(currentSub, activeTerm, e.target.value)} 
@@ -689,7 +689,6 @@ export default function MarksheetApp() {
                         </div>
                       </div>
 
-                      {/* Mini List for Review */}
                       <div>
                         <h4 className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">Quick Review</h4>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -744,7 +743,6 @@ export default function MarksheetApp() {
 
                 <div className="mt-8 flex justify-between pt-4 border-t border-gray-200">
                   <button onClick={() => setStep(s => Math.max(1, s - 1))} className={`px-6 py-2 rounded-xl font-bold transition-all ${step === 1 ? 'text-gray-300' : 'bg-white border-2 border-gray-200 hover:bg-gray-50 text-gray-600'}`}>Back</button>
-                  {/* Next Button logic slightly changed to accommodate smart entry block */}
                   {step < 5 && step === 1 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-schoolBlue text-white rounded-xl font-bold shadow-md hover:bg-blue-800 active:scale-95 transition-all">Next</button>}
                   {step > 1 && step < 5 && <button onClick={() => setStep(s => Math.min(5, s + 1))} className="px-8 py-2 bg-gray-800 text-white rounded-xl font-bold shadow-md hover:bg-gray-900 active:scale-95 transition-all">Skip to Term {step}</button>}
                 </div>
@@ -782,9 +780,6 @@ export default function MarksheetApp() {
   )
 }
 
-// ==========================================
-// MARKSHEET TEMPLATE
-// ==========================================
 function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
@@ -803,7 +798,6 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
   const resolvedSubjects = (subjectsList && subjectsList.length > 0) ? subjectsList : Object.keys(marks || {});
 
   return (
-    // ✅ Restored old print settings: h-[295mm], p-2
     <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
       <div className="absolute inset-0 flex justify-center items-center z-0 opacity-[0.05] pointer-events-none"><img src="/logo.png" className="w-[450px] h-[450px]" /></div>
       <div className={`relative z-10 h-full w-full border-[6px] ${t.border} p-[3px] flex flex-col box-border bg-white`}>
@@ -825,7 +819,6 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             ) : <div className="w-28 h-36" />}
           </div>
 
-          {/* ✅ CRASH-PROOF DETAILS WITH OPTIONAL CHAINING (?.) */}
           <div className={`${t.bgHighlight} border ${t.border} p-3 grid grid-cols-2 gap-x-6 gap-y-2 font-bold text-[13px] mb-3 uppercase`}>
             <div className="flex items-center"><span className="w-[130px] text-left">STUDENT'S NAME</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.name || ''}</span></div>
             <div className="flex items-center"><span className="w-[80px] text-left">ROLL NO.</span><span className="w-[20px] text-center">:</span><span className="flex-1 text-left">{student?.roll || ''}</span></div>
@@ -941,4 +934,5 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     </div>
   )
 }
+
 
