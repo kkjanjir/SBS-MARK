@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi, RefreshCw, Cloud } from 'lucide-react';
+import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -8,7 +8,6 @@ const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 const OFFLINE_MARKS_QUEUE_KEY = 'sbsOfflineMarksQueue';
-const LOCAL_CACHE_KEY = 'sbs_students_cache';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -38,7 +37,6 @@ export default function MarksheetApp() {
   const [loginError, setLoginError] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false); // 🔥 NEW: Background Sync Tracker
 
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -57,6 +55,7 @@ export default function MarksheetApp() {
 
   const [dbStudents, setDbStudents] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -94,7 +93,6 @@ export default function MarksheetApp() {
     try {
       const queued = JSON.parse(localStorage.getItem(OFFLINE_MARKS_QUEUE_KEY) || '[]');
       if (!queued.length) return;
-      setIsSyncing(true);
 
       for (const item of queued) {
         if (item.mode === 'update' && item.id) {
@@ -109,19 +107,11 @@ export default function MarksheetApp() {
       fetchStudentsFromCloud();
     } catch (err) {
       console.error("Offline Sync Error:", err);
-    } finally {
-      setIsSyncing(false);
     }
   };
 
-  // 🌐 AUTH & CACHE INITIALIZATION
+  // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
   useEffect(() => {
-    // 🔥 LOAD INSTANT CACHE ON MOUNT
-    const cachedData = localStorage.getItem(LOCAL_CACHE_KEY);
-    if (cachedData) {
-      setDbStudents(JSON.parse(cachedData));
-    }
-
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Registration failed: ', err));
     }
@@ -157,26 +147,24 @@ export default function MarksheetApp() {
 
   useEffect(() => { setActiveSubjectIdx(0); }, [step]);
 
-  // 🔥 ADVANCED FETCH WITH BACKGROUND SYNC
+  // ✅ Simple, Crash-Proof Fetch Function
   const fetchStudentsFromCloud = async () => {
-    if (!session || !isOnline) return;
-    setIsSyncing(true); // Sirf upar chhota spinner ghoomega, page nahi rukega
+    if (!session || !isOnline) { setIsLoadingList(false); return; }
+    setIsLoadingList(true); // Normal loading shuru
     try {
       const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
       if (error) {
         console.error("Fetch Error:", error.message);
       } else if (data) {
         setDbStudents(data);
-        localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data)); // Cache update kar do
       }
     } catch (err) {
       console.error("Unexpected fetch error:", err);
     } finally {
-      setIsSyncing(false);
+      setIsLoadingList(false); // Ye line ab 100% chalegi, spinner kabhi nahi atakega
     }
   };
 
-  // Har baar jab dashboard khulega toh chupke se background mein sync hoga
   useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
 
   const handleLogin = async (e: any) => {
@@ -219,22 +207,15 @@ export default function MarksheetApp() {
     e.stopPropagation(); 
     if(!isOnline) return alert("You must be online to delete records.");
     if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name || 'Unknown'}?`)) {
-      setIsSyncing(true);
-      // 🔥 Optimistic Delete (Turant UI se hatao)
-      const newData = dbStudents.filter(s => s.id !== id);
-      setDbStudents(newData);
-      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(newData));
-
+      setIsLoadingList(true);
       try {
         const { error } = await supabase.from('marks_records').delete().eq('id', id);
-        if (error) { 
-          alert("Failed to delete from Cloud: " + error.message); 
-          fetchStudentsFromCloud(); // Revert back if error
-        }
+        if (error) { alert("Failed to delete: " + error.message); } 
+        else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
       } catch(err) {
         alert("Unexpected error during delete.");
       } finally {
-        setIsSyncing(false);
+        setIsLoadingList(false);
       }
     }
   };
@@ -278,7 +259,7 @@ export default function MarksheetApp() {
     if (error) { alert("Save failed! " + error.message); } 
     else {
       setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
-      fetchStudentsFromCloud(); // Sync newly saved data quietly
+      fetchStudentsFromCloud();
       proceedAfterSave(addNext);
     }
   };
@@ -446,20 +427,13 @@ export default function MarksheetApp() {
 
       <div id="app-ui">
         {!isOnline && (
-          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm z-50">
+          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
             <WifiOff size={16}/> Offline Mode: Data cannot be saved until internet is restored.
           </div>
         )}
 
-        {/* 🔥 NEW: Sync Status Bar at the Top */}
-        {isOnline && view === 'dashboard' && (
-           <div className={`text-xs text-center py-1 transition-all flex justify-center items-center gap-1.5 font-bold ${isSyncing ? 'bg-blue-100 text-schoolBlue' : 'bg-green-100 text-green-700'}`}>
-              {isSyncing ? <><RefreshCw size={12} className="animate-spin"/> Syncing Database...</> : <><Cloud size={12}/> Cloud Data Up to Date</>}
-           </div>
-        )}
-
         {view === 'dashboard' ? (
-          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-8 px-4 relative">
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
             <div className="w-full max-w-5xl">
               
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
@@ -541,11 +515,10 @@ export default function MarksheetApp() {
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center">
                   <h3 className="font-bold">Database: {activeClass}</h3>
-                  <span className="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-1 rounded-md">{classFilteredStudents.length} Records</span>
                 </div>
                 <div className="divide-y divide-gray-100 min-h-[200px]">
-                  {/* 🔥 NO MORE BLOCKING LOADING SPINNER. ONLY EMPTY STATE IF NO CACHE */}
-                  {dbStudents.length === 0 && isSyncing ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Syncing with Cloud...</div> : 
+                  {/* ✅ Original Clean Loading Screen restored here */}
+                  {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                     classFilteredStudents.filter(s => (s.student_name || '').toUpperCase().includes(searchQuery.toUpperCase())).map((s) => (
                       <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
