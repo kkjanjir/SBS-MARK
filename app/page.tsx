@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -10,6 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const OFFLINE_MARKS_QUEUE_KEY = 'sbsOfflineMarksQueue';
 const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
 const OFFLINE_ONLY_MODE_KEY = 'sbsOfflineOnlyMode';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -40,15 +41,12 @@ type BackupRecord = {
   source: 'cloud' | 'local';
   created_at?: string;
 };
+type AiDraftRow = { student_name: string; roll_no?: string; subjects: Record<string, { t1?: string; t2?: string; t3?: string }> };
 
 export default function MarksheetApp() {
-  // 🔒 AUTH & NETWORK STATES
-  const [session, setSession] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  // 🔒 LOCAL ACCESS PIN
+  const [accessPin, setAccessPin] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
 
   // APP STATES
@@ -72,6 +70,13 @@ export default function MarksheetApp() {
   const [lastSaved, setLastSaved] = useState('');
   const [notice, setNotice] = useState('');
   const [offlineOnlyMode, setOfflineOnlyMode] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiReply, setAiReply] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiImage, setAiImage] = useState<string | null>(null);
+  const [aiImageName, setAiImageName] = useState('');
+  const [aiDraftRows, setAiDraftRows] = useState<AiDraftRow[]>([]);
+  const [isListening, setIsListening] = useState(false);
 
   // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -187,14 +192,10 @@ export default function MarksheetApp() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); });
     
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      subscription.unsubscribe();
     }
   }, []);
 
@@ -215,15 +216,15 @@ export default function MarksheetApp() {
   }, [activeClass]);
 
   useEffect(() => {
-    if (session && isOnline) syncOfflineQueue();
-  }, [session, isOnline]);
+    if (isOnline) syncOfflineQueue();
+  }, [isOnline]);
 
   useEffect(() => { setActiveSubjectIdx(0); }, [step]);
 
   // ✅ Simple, Crash-Proof Fetch Function
   const fetchStudentsFromCloud = async () => {
     const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
-    if (!session || !isOnline) {
+    if (!isOnline) {
       setDbStudents(Array.isArray(localBackups) ? localBackups : []);
       setIsLoadingList(false);
       return;
@@ -243,18 +244,19 @@ export default function MarksheetApp() {
     }
   };
 
-  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
+  useEffect(() => { if (isUnlocked && view === 'dashboard') fetchStudentsFromCloud(); }, [isUnlocked, view, isOnline]);
 
-  const handleLogin = async (e: any) => {
+  const handleUnlock = (e: any) => {
     e.preventDefault();
-    if(!isOnline) return alert("Please connect to internet to Login!");
-    setIsLoggingIn(true); setLoginError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setLoginError(error.message);
-    setIsLoggingIn(false);
+    if (/^\d{4}$/.test(accessPin)) {
+      setIsUnlocked(true);
+      showNotice('Portal unlocked.');
+      return;
+    }
+    alert('4 digit PIN डालो.');
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); setView('dashboard'); };
+  const handleLogout = async () => { setIsUnlocked(false); setAccessPin(''); setView('dashboard'); };
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
@@ -540,6 +542,151 @@ export default function MarksheetApp() {
     }
   };
 
+  const callGemini = async (prompt: string, imageBase64?: string) => {
+    const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (!apiKey) {
+      alert('Please set NEXT_PUBLIC_GEMINI_API_KEY in .env.local');
+      return null;
+    }
+    const body: any = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          ...(imageBase64 ? [{ inline_data: { mime_type: 'image/jpeg', data: imageBase64 } }] : [])
+        ]
+      }],
+      generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+    };
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    return text;
+  };
+
+  const handleAiChat = async () => {
+    if (!aiPrompt.trim()) return;
+    setIsAiLoading(true);
+    try {
+      const response = await callGemini(JSON.stringify({
+        task: "Answer user's school admin prompt safely and briefly. Return JSON with keys: reply and actions.",
+        user_prompt: aiPrompt
+      }));
+      if (!response) return;
+      const parsed = JSON.parse(response);
+      setAiReply(parsed.reply || response);
+    } catch (err) {
+      console.error(err);
+      alert('AI chat failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleAiImageUpload = (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || '');
+      setAiImage(result.split(',')[1] || null);
+      setAiImageName(file.name || 'image');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const scanImageToDraft = async () => {
+    if (!aiImage) return alert('Image upload karo pehle.');
+    setIsAiLoading(true);
+    try {
+      const scanPrompt = JSON.stringify({
+        task: "Extract marks table from image and return strict JSON only",
+        schema: {
+          rows: [{ student_name: "string", roll_no: "string", subjects: { "SUBJECT": { t1: "number|string", t2: "number|string", t3: "number|string" } } }]
+        }
+      });
+      const response = await callGemini(scanPrompt, aiImage);
+      if (!response) return;
+      const parsed = JSON.parse(response);
+      const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+      setAiDraftRows(rows);
+      showNotice(`${rows.length} AI rows scanned. Preview edit karke upload karo.`);
+    } catch (err) {
+      console.error(err);
+      alert('Image scan failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const applyAiDraftRow = (idx: number) => {
+    const row = aiDraftRows[idx];
+    if (!row) return;
+    const allStudents = [...dbStudents];
+    const matched = allStudents.find(s =>
+      (s.student_name || '').toUpperCase() === (row.student_name || '').toUpperCase() ||
+      (row.roll_no && `${s.roll_no}` === `${row.roll_no}`)
+    );
+    const rowSubjects = Object.keys(row.subjects || {}).slice(0, 8);
+    if (rowSubjects.length) {
+      setSubjectConfig(prev => {
+        const updated = { ...prev, [activeClass]: rowSubjects };
+        localStorage.setItem('sbsSubjects', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    const normalizedMarks: MarksState = {};
+    rowSubjects.forEach(sub => {
+      const r = row.subjects[sub] || {};
+      normalizedMarks[sub.toUpperCase()] = { t1: `${r.t1 || ''}`, t2: `${r.t2 || ''}`, t3: `${r.t3 || ''}` };
+    });
+    setMarks(normalizedMarks);
+    setStudent({
+      name: matched?.student_name || (row.student_name || '').toUpperCase(),
+      roll: `${matched?.roll_no || row.roll_no || ''}`,
+      mother: matched?.student_data?.mother || '',
+      father: matched?.student_data?.father || '',
+      gender: matched?.student_data?.gender || 'MALE'
+    });
+    setEditingId(matched?.id || null);
+    setView('editor');
+    setStep(2);
+  };
+
+  const handleVoiceFill = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return alert('Voice feature browser me available nahi hai.');
+    const recognition = new SR();
+    recognition.lang = 'en-IN';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const text = event.results?.[0]?.[0]?.transcript?.toUpperCase() || '';
+      const parts = text.match(/([A-Z .]+)\s+(\d{1,3})/);
+      if (!parts) return showNotice('Voice format: SUBJECT 78');
+      const sub = parts[1].trim();
+      const mark = parts[2].trim();
+      if (!marks[sub]) {
+        setSubjectConfig(prev => {
+          const existing = [...(prev[activeClass] || DEFAULT_SUBJECTS)];
+          if (!existing.includes(sub) && existing.length < 8) existing.push(sub);
+          const updated = { ...prev, [activeClass]: existing };
+          localStorage.setItem('sbsSubjects', JSON.stringify(updated));
+          return updated;
+        });
+      }
+      handleMarkChange(sub, activeTerm, mark);
+      showNotice(`Voice filled: ${sub} ${mark}`);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.start();
+  };
+
   const saveSubjects = () => {
     const cleaned = Array.from(new Set(tempSubjects.map(s => s.trim().toUpperCase()).filter(Boolean))).slice(0, 8);
     if (!cleaned.length) {
@@ -574,19 +721,11 @@ export default function MarksheetApp() {
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
   // ==========================================
-  // VIEW 1: LOGIN SCREEN 🔒
+  // VIEW 1: SIMPLE PIN SCREEN 🔒
   // ==========================================
-  if (isCheckingAuth) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-schoolBlue" size={48}/></div>;
-
-  if (!session) {
+  if (!isUnlocked) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
-        {!isOnline && (
-          <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-bold flex items-center justify-center gap-2 z-50 animate-in slide-in-from-top">
-            <WifiOff size={18}/> No Internet Connection
-          </div>
-        )}
-        
         <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
         
@@ -596,25 +735,20 @@ export default function MarksheetApp() {
               <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
-            <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
+            <p className="text-gray-500 font-bold text-sm mt-1">Enter Any 4 Digit PIN</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
-            {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
+          <form onSubmit={handleUnlock} className="space-y-5">
             <div className="relative">
               <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
-              <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
+              <input type="password" required placeholder="4 Digit PIN" maxLength={4} value={accessPin} onChange={(e) => setAccessPin(e.target.value.replace(/\D/g, ''))} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold text-center tracking-[8px]" />
             </div>
-            <div className="relative">
-              <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
-              <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
-            </div>
-            <button type="submit" disabled={isLoggingIn || !isOnline} className={`w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 ${isOnline ? 'bg-schoolBlue hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'}`}>
-              {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
+            <button type="submit" className="w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 bg-schoolBlue hover:bg-blue-800">
+              Open Portal
             </button>
           </form>
-          <div className="mt-8 text-center text-xs text-gray-400 font-semibold flex items-center justify-center gap-1">
-            <Lock size={12}/> Protected by Supabase Auth
+          <div className="mt-8 text-center text-xs text-gray-400 font-semibold">
+            No authentication required. Any 4 digits work.
           </div>
         </div>
       </div>
@@ -741,6 +875,67 @@ export default function MarksheetApp() {
                     <Plus size={20} /> Add
                   </button>
                 </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-purple-100 shadow-sm p-4 mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <Bot size={18} className="text-purple-600" />
+                  <h3 className="font-bold text-purple-700">Gemini 2.5 Flash Assistant</h3>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="AI se bolo: class 5 ka summary do, ya marks clean karo..." className="w-full border-2 border-gray-200 rounded-xl p-3 min-h-[100px] outline-none focus:border-purple-400" />
+                    <div className="flex gap-2">
+                      <button onClick={handleAiChat} disabled={isAiLoading} className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+                        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Ask AI
+                      </button>
+                      <button onClick={handleVoiceFill} className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 ${isListening ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+                        {isListening ? <MicOff size={16} /> : <Mic size={16} />} Voice Fill
+                      </button>
+                    </div>
+                    {aiReply && <div className="text-sm bg-purple-50 border border-purple-100 p-3 rounded-xl">{aiReply}</div>}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="w-full border-2 border-dashed border-gray-300 rounded-xl px-3 py-5 text-center font-semibold text-gray-600 cursor-pointer block hover:border-purple-400">
+                      {aiImageName ? `Image selected: ${aiImageName}` : 'Upload Marksheet Image for AI Scan'}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleAiImageUpload} />
+                    </label>
+                    <button onClick={scanImageToDraft} disabled={isAiLoading || !aiImage} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">Scan to Table Preview</button>
+                  </div>
+                </div>
+                {!!aiDraftRows.length && (
+                  <div className="mt-4 overflow-auto">
+                    <table className="w-full text-xs border">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="border p-2">Name</th>
+                          <th className="border p-2">Roll</th>
+                          <th className="border p-2">Subjects JSON (editable)</th>
+                          <th className="border p-2">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiDraftRows.map((row, idx) => (
+                          <tr key={idx}>
+                            <td className="border p-1"><input value={row.student_name || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, student_name: e.target.value.toUpperCase() } : r))} className="w-full p-1 border rounded" /></td>
+                            <td className="border p-1"><input value={row.roll_no || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, roll_no: e.target.value } : r))} className="w-full p-1 border rounded" /></td>
+                            <td className="border p-1">
+                              <textarea value={JSON.stringify(row.subjects || {}, null, 0)} onChange={(e) => {
+                                try {
+                                  const parsed = JSON.parse(e.target.value || '{}');
+                                  setAiDraftRows(prev => prev.map((r, i) => i===idx ? { ...r, subjects: parsed } : r));
+                                } catch {}
+                              }} className="w-full p-1 border rounded min-h-[70px]" />
+                            </td>
+                            <td className="border p-1">
+                              <button onClick={() => applyAiDraftRow(idx)} className="px-3 py-1 bg-schoolBlue text-white rounded font-bold">Apply + Preview</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
