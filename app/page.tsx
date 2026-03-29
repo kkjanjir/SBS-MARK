@@ -565,7 +565,7 @@ export default function MarksheetApp() {
                   <div>
                     {/* Added dots S.B.S. */}
                     <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
-                    <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
+                    <p className="text-gray-600 font-bold tracking-wide mt-1">Dev By AKASH <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
                   </div>
                 </div>
                 <button onClick={handleLogout} className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100">
@@ -635,6 +635,39 @@ export default function MarksheetApp() {
                   </button>
                 </div>
               </div>
+              {scanProgress && <div className="mb-4 text-sm font-bold text-violet-700 bg-violet-50 border border-violet-100 px-4 py-2 rounded-xl">{scanProgress}</div>}
+              {scanDraftRows.length > 0 && (
+                <div className="mb-6 bg-white border border-violet-200 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-extrabold text-violet-700">Review & Edit Scanned Students ({scanDraftRows.length})</h3>
+                    <div className="flex gap-2">
+                      <button onClick={() => setScanDraftRows([])} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 font-bold">Discard</button>
+                      <button onClick={confirmSaveScannedRows} disabled={isApplyingScan} className="px-4 py-2 rounded-lg bg-violet-700 text-white font-bold disabled:opacity-60">
+                        {isApplyingScan ? 'Saving...' : 'Confirm & Save to Database'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1">
+                    {scanDraftRows.map((row, idx) => (
+                      <div key={`${row.studentName}-${idx}`} className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+                        <div className="grid md:grid-cols-2 gap-3 mb-3">
+                          <input value={row.studentName} onChange={(e) => updateScanDraftStudent(idx, { studentName: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Student Name" />
+                          <input value={row.className} onChange={(e) => updateScanDraftStudent(idx, { className: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Class Name" />
+                        </div>
+                        <div className="space-y-2">
+                          {Object.entries(row.marks || {}).map(([subject, value]) => (
+                            <div key={subject} className="grid grid-cols-[1fr_100px] gap-2 items-center">
+                              <input value={subject} readOnly className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm font-semibold" />
+                              <input value={String(value ?? '')} onChange={(e) => updateScanDraftMark(idx, subject, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-center font-bold" />
+                            </div>
+                          ))}
+                          <button onClick={() => addSubjectToScannedRow(idx)} className="text-xs font-bold text-violet-700 hover:underline">+ Add Subject</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center"><h3 className="font-bold">Database: {activeClass}</h3><span className="text-xs text-gray-500 font-semibold">{migrationStatus}</span></div>
