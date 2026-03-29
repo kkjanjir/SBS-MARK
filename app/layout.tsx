@@ -12,7 +12,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: 'SBS Shiksha Niketan',
-  description: 'EduPrime SMS - School Management System',
+  description: 'Dev By AKASH - School Management System',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
