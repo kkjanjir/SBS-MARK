@@ -6,7 +6,7 @@ import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords,
 import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
 import { parseSupabaseCsv } from './csvImport';
 import type { GeminiScannedStudent } from './geminiBatchScan';
-import AIAssistantDrawer from './AIAssistantDrawer';
+import AIDataAssistant from './AIDataAssistant';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -25,6 +25,12 @@ const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 
 export default function MarksheetApp() {
+  type ScanDraftRow = {
+    studentName: string;
+    className: string;
+    marks: Record<string, number | string>;
+  };
+
   const [isOnline, setIsOnline] = useState(true);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
@@ -49,6 +55,9 @@ export default function MarksheetApp() {
   const [migrationStatus, setMigrationStatus] = useState('');
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [scanProgress, setScanProgress] = useState<string | null>(null);
+  const [scanDraftRows, setScanDraftRows] = useState<ScanDraftRow[]>([]);
+  const [isApplyingScan, setIsApplyingScan] = useState(false);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
@@ -426,6 +435,73 @@ export default function MarksheetApp() {
     await loadStudentsFromLocal();
     void tryBackgroundDriveBackup();
     return { updated, inserted };
+  };
+
+  // Backward-compatible handlers for the review table UI (if present in deployed JSX).
+  const updateScanDraftStudent = (index: number, field: 'studentName' | 'className', value: string) => {
+    setScanDraftRows((prev) =>
+      prev.map((row, idx) => (idx === index ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const updateScanDraftMark = (index: number, subject: string, mark: string) => {
+    setScanDraftRows((prev) =>
+      prev.map((row, idx) =>
+        idx === index
+          ? {
+              ...row,
+              marks: {
+                ...row.marks,
+                [subject]: mark,
+              },
+            }
+          : row
+      )
+    );
+  };
+
+  const addSubjectToScannedRow = (index: number) => {
+    const subject = window.prompt('Enter subject name');
+    if (!subject) return;
+    const normalized = subject.trim();
+    if (!normalized) return;
+    setScanDraftRows((prev) =>
+      prev.map((row, idx) =>
+        idx === index
+          ? {
+              ...row,
+              marks: row.marks[normalized] !== undefined ? row.marks : { ...row.marks, [normalized]: '' },
+            }
+          : row
+      )
+    );
+  };
+
+  const confirmSaveScannedRows = async () => {
+    if (!scanDraftRows.length) return;
+    setIsApplyingScan(true);
+    try {
+      setScanProgress(`Processing ${scanDraftRows.length} scanned students...`);
+      let updated = 0;
+      let inserted = 0;
+
+      for (const row of scanDraftRows) {
+        const action = await upsertScannedStudent({
+          studentName: row.studentName,
+          className: row.className,
+          marks: row.marks,
+        });
+        if (action === 'updated') updated += 1;
+        else inserted += 1;
+      }
+
+      await loadStudentsFromLocal();
+      void tryBackgroundDriveBackup();
+      setScanDraftRows([]);
+      setScanProgress(`Successfully processed ${updated + inserted} students (${updated} updated, ${inserted} new).`);
+    } finally {
+      setIsApplyingScan(false);
+    }
   };
 
   const triggerSinglePrint = () => {
@@ -827,7 +903,7 @@ export default function MarksheetApp() {
           )
         })}
       </div>
-      <AIAssistantDrawer onApproveSave={handleApproveAssistantRows} />
+      <AIDataAssistant />
     </>
   )
 }
