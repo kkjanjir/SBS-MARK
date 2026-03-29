@@ -17,6 +17,7 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=...
 3. If local DB is empty and internet is available, it performs one-time import from Supabase `marks_records` into IndexedDB.
 4. After initialization, reads/writes are local-only (offline-first), and editor changes are auto-saved.
 5. A background Drive backup attempt runs silently after local updates (plus manual backup/restore buttons).
+6. You can also import a Supabase CSV export from the dashboard via **Import CSV**.
 
 ### Google Drive backup/restore setup
 

@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp } from 'lucide-react';
 import { backupToDrive, getAccessToken, restoreFromDrive } from './driveSync';
 import { clearAllRecords, deleteRecord, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
 import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
+import { parseSupabaseCsv } from './csvImport';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -45,6 +46,8 @@ export default function MarksheetApp() {
   const [lastSaved, setLastSaved] = useState('');
   const [migrationStatus, setMigrationStatus] = useState('');
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -336,6 +339,32 @@ export default function MarksheetApp() {
     }
   };
 
+  const handleCsvFileImport = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImportingCsv(true);
+      const text = await file.text();
+      const records = parseSupabaseCsv(text);
+      if (!records.length) {
+        alert('No valid records found in CSV.');
+        return;
+      }
+
+      await putManyRecords(records);
+      await loadStudentsFromLocal();
+      setMigrationStatus(`CSV import complete: ${records.length} records loaded into IndexedDB.`);
+      void tryBackgroundDriveBackup();
+      alert(`Imported ${records.length} records from CSV.`);
+    } catch (error: any) {
+      alert(error.message || 'CSV import failed.');
+    } finally {
+      setIsImportingCsv(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
+
   const triggerSinglePrint = () => {
     document.body.classList.add('printing-single');
     document.title = `${student.name || 'Student'}_Class_${activeClass}`;
@@ -445,7 +474,11 @@ export default function MarksheetApp() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-3 items-center justify-start">
+                  <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileImport} />
+                  <button onClick={() => csvInputRef.current?.click()} disabled={isImportingCsv} className="bg-white text-sky-700 border-2 border-sky-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-sky-50 disabled:opacity-60">
+                    {isImportingCsv ? <Loader2 className="animate-spin" size={18} /> : <FileUp size={20} />} Import CSV
+                  </button>
                   <button onClick={handleDriveBackup} disabled={isDriveSyncing} className="bg-white text-emerald-700 border-2 border-emerald-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 flex-1 sm:flex-none disabled:opacity-60">
                     {isDriveSyncing ? <Loader2 className="animate-spin" size={18} /> : <DownloadCloud size={20} />} Backup to Drive
                   </button>
@@ -517,8 +550,12 @@ export default function MarksheetApp() {
                     ))}
                   </div>
                   <div className="flex gap-2 mb-6">
-                    <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
-                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
+                    <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value)} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
+                    <button onClick={() => {
+                      const normalized = newSubInput.trim();
+                      const exists = tempSubjects.some((sub) => sub.trim().toLowerCase() === normalized.toLowerCase());
+                      if(normalized && !exists){ setTempSubjects([...tempSubjects, normalized]); setNewSubInput(''); }
+                    }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
                   </div>
                   <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
                 </div>
