@@ -17,8 +17,13 @@ type ChatMessage = {
   rows?: AIMarksRow[];
 };
 
-const SYSTEM_PROMPT =
-  "You are the EduPrime Data Assistant. Extract student names, roll numbers, and marks from the provided image based strictly on the user's instructions. Return ONLY a valid JSON array of student objects. Do not include markdown formatting like ```json in the final string, just the raw JSON array.";
+const SYSTEM_PROMPT = `You are the EduPrime Data Assistant for an offline-first school ERP.
+
+Rules:
+1) If user asks to extract marksheet data, return ONLY a valid raw JSON array of students.
+2) If user asks normal questions, modifications, or guidance, answer in plain conversational text.
+3) Never force image upload. Work with text-only or text+image both.
+4) Do not wrap JSON inside markdown fences.`;
 
 function toMarksState(marks: Record<string, number | string>) {
   const shaped: Record<string, { t1: string; t2: string; t3: string }> = {};
@@ -51,7 +56,7 @@ async function fileToBase64(file: File): Promise<string> {
 
 export default function AIDataAssistant() {
   const [open, setOpen] = useState(false);
-  const [instruction, setInstruction] = useState('Extract all students and marks clearly.');
+  const [instruction, setInstruction] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [sending, setSending] = useState(false);
@@ -69,7 +74,7 @@ export default function AIDataAssistant() {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, pendingRows, open]);
 
-  const canSend = useMemo(() => !!file && instruction.trim().length > 0, [file, instruction]);
+  const canSend = useMemo(() => instruction.trim().length > 0 || !!file, [file, instruction]);
 
   const initGeminiChat = async () => {
     if (chatSessionRef.current) return chatSessionRef.current;
@@ -85,22 +90,30 @@ export default function AIDataAssistant() {
   };
 
   const handleSend = async () => {
-    if (!file || !canSend || sending) return;
+    if (!canSend || sending) return;
     setSending(true);
     try {
-      setMessages((prev) => [...prev, { role: 'user', text: instruction, imagePreview: preview }]);
-      const base64 = await fileToBase64(file);
+      const userText = instruction.trim() || 'Please extract marksheet details from this image.';
+      setMessages((prev) => [...prev, { role: 'user', text: userText, imagePreview: preview || undefined }]);
       const chat = await initGeminiChat();
-      const result = await chat.sendMessage([
-        { text: instruction },
-        { inlineData: { mimeType: file.type || 'image/jpeg', data: base64 } },
-      ]);
+      const parts: any[] = [];
+      if (userText) parts.push({ text: userText });
+      if (file) {
+        const base64 = await fileToBase64(file);
+        parts.push({ inlineData: { mimeType: file.type || 'image/jpeg', data: base64 } });
+      }
+      const result = await chat.sendMessage(parts);
       const text = result?.response?.text?.() || '[]';
-      const rows = safeParseRows(text);
-      setPendingRows(rows);
-      setMessages((prev) => [...prev, { role: 'assistant', text: `Parsed ${rows.length} students. Please review and approve.`, rows }]);
+      try {
+        const rows = safeParseRows(text);
+        setPendingRows(rows);
+        setMessages((prev) => [...prev, { role: 'assistant', text: `Parsed ${rows.length} students. Please review and approve.`, rows }]);
+      } catch {
+        setMessages((prev) => [...prev, { role: 'assistant', text }]);
+      }
       setFile(null);
       setPreview('');
+      setInstruction('');
     } catch (error: any) {
       setMessages((prev) => [...prev, { role: 'assistant', text: error.message || 'Failed to process image.' }]);
     } finally {
@@ -247,7 +260,7 @@ export default function AIDataAssistant() {
                 setFile(selected);
                 setPreview(selected ? URL.createObjectURL(selected) : '');
               }} />
-              <input value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="e.g. Extract only Math and Science marks" className="flex-1 border rounded px-3 py-2 text-sm" />
+              <input value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="Type message... e.g. Rahul ka Math update karo ya marksheet extract karo" className="flex-1 border rounded px-3 py-2 text-sm" />
               <button onClick={handleSend} disabled={!canSend || sending} className="h-10 w-10 bg-blue-600 text-white rounded flex items-center justify-center disabled:opacity-50"><Send size={16} /></button>
             </div>
           </div>
