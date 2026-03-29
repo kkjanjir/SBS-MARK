@@ -264,6 +264,37 @@ export default function MarksheetApp() {
     proceedAfterSave(addNext);
   };
 
+  const saveToLocalBackup = (payload: any, addNext: boolean) => {
+    const currentLocal = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    const localRecords: BackupRecord[] = Array.isArray(currentLocal) ? currentLocal : [];
+    const duplicate = localRecords.some(
+      s => s.class_name === activeClass && s.roll_no === student.roll && (s.student_name || '').toUpperCase() === student.name.toUpperCase() && s.id !== editingId
+    );
+    if (duplicate) {
+      alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) already exists in local backup for Class ${activeClass}.`);
+      return;
+    }
+
+    let updatedLocal = [...localRecords];
+    if (editingId) {
+      updatedLocal = updatedLocal.map(item => item.id === editingId ? { ...item, ...payload, source: 'local' } : item);
+    } else {
+      updatedLocal.unshift({
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...payload,
+        source: 'local',
+        created_at: new Date().toISOString()
+      });
+    }
+    localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(updatedLocal));
+    setDbStudents(prev => {
+      const cloud = prev.filter((s: any) => s.source !== 'local');
+      return [...updatedLocal, ...cloud];
+    });
+    showNotice('Saved in local backup only (offline safe mode).');
+    proceedAfterSave(addNext);
+  };
+
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     
