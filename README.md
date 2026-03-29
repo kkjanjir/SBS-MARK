@@ -20,6 +20,8 @@ NEXT_PUBLIC_GEMINI_API_KEY=...
 5. A background Drive backup attempt runs silently after local updates (plus manual backup/restore buttons).
 6. You can also import a Supabase CSV export from the dashboard via **Import CSV**.
 7. Use **Scan Class Sheet** to upload handwritten class sheets; Gemini extracts batch student marks and the app upserts them into IndexedDB.
+8. Before scan data is saved, a **Review & Edit** panel lets you correct names/classes/marks, then confirm.
+9. A floating **EduPrime AI Chatbot** is available in the bottom-right using Gemini `gemini-2.5-flash`.
 
 ### Google Drive backup/restore setup
 

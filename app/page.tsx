@@ -6,6 +6,7 @@ import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords,
 import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
 import { parseSupabaseCsv } from './csvImport';
 import { extractStudentsFromClassSheet, fileToBase64, type GeminiScannedStudent } from './geminiBatchScan';
+import AiChatWidget from './AiChatWidget';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -49,7 +50,9 @@ export default function MarksheetApp() {
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [isScanningSheet, setIsScanningSheet] = useState(false);
+  const [isApplyingScan, setIsApplyingScan] = useState(false);
   const [scanProgress, setScanProgress] = useState('');
+  const [scanDraftRows, setScanDraftRows] = useState<GeminiScannedStudent[]>([]);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -431,27 +434,67 @@ export default function MarksheetApp() {
         alert('No students detected in scanned sheet.');
         return;
       }
-
-      let updated = 0;
-      let inserted = 0;
-      for (let i = 0; i < scannedRows.length; i += 1) {
-        setScanProgress(`Processing student ${i + 1} of ${scannedRows.length}...`);
-        const action = await upsertScannedStudent(scannedRows[i]);
-        if (action === 'updated') updated += 1;
-        else inserted += 1;
-      }
-
-      await loadStudentsFromLocal();
-      void tryBackgroundDriveBackup();
-      const total = updated + inserted;
-      setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
-      alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      setScanDraftRows(scannedRows);
+      setScanProgress(`Review ${scannedRows.length} scanned students before saving.`);
     } catch (error: any) {
       setScanProgress('');
       alert(error.message || 'Failed to scan class sheet.');
     } finally {
       setIsScanningSheet(false);
       if (scanInputRef.current) scanInputRef.current.value = '';
+    }
+  };
+
+  const updateScanDraftStudent = (idx: number, patch: Partial<GeminiScannedStudent>) => {
+    setScanDraftRows((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+
+  const updateScanDraftMark = (idx: number, subject: string, value: string) => {
+    setScanDraftRows((prev) =>
+      prev.map((row, i) =>
+        i === idx
+          ? { ...row, marks: { ...row.marks, [subject]: value } }
+          : row
+      )
+    );
+  };
+
+  const addSubjectToScannedRow = (idx: number) => {
+    const subject = window.prompt('Enter subject name');
+    if (!subject) return;
+    const normalized = subject.trim();
+    if (!normalized) return;
+    setScanDraftRows((prev) =>
+      prev.map((row, i) =>
+        i === idx && !Object.keys(row.marks).includes(normalized)
+          ? { ...row, marks: { ...row.marks, [normalized]: '' } }
+          : row
+      )
+    );
+  };
+
+  const confirmSaveScannedRows = async () => {
+    if (!scanDraftRows.length) return;
+    try {
+      setIsApplyingScan(true);
+      let updated = 0;
+      let inserted = 0;
+      for (let i = 0; i < scanDraftRows.length; i += 1) {
+        setScanProgress(`Processing student ${i + 1} of ${scanDraftRows.length}...`);
+        const action = await upsertScannedStudent(scanDraftRows[i]);
+        if (action === 'updated') updated += 1;
+        else inserted += 1;
+      }
+      await loadStudentsFromLocal();
+      void tryBackgroundDriveBackup();
+      const total = updated + inserted;
+      setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      setScanDraftRows([]);
+    } catch (error: any) {
+      alert(error.message || 'Failed to save scanned rows.');
+    } finally {
+      setIsApplyingScan(false);
     }
   };
 
@@ -591,6 +634,38 @@ export default function MarksheetApp() {
                 </div>
               </div>
               {scanProgress && <div className="mb-4 text-sm font-bold text-violet-700 bg-violet-50 border border-violet-100 px-4 py-2 rounded-xl">{scanProgress}</div>}
+              {scanDraftRows.length > 0 && (
+                <div className="mb-6 bg-white border border-violet-200 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-extrabold text-violet-700">Review & Edit Scanned Students ({scanDraftRows.length})</h3>
+                    <div className="flex gap-2">
+                      <button onClick={() => setScanDraftRows([])} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 font-bold">Discard</button>
+                      <button onClick={confirmSaveScannedRows} disabled={isApplyingScan} className="px-4 py-2 rounded-lg bg-violet-700 text-white font-bold disabled:opacity-60">
+                        {isApplyingScan ? 'Saving...' : 'Confirm & Save to Database'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1">
+                    {scanDraftRows.map((row, idx) => (
+                      <div key={`${row.studentName}-${idx}`} className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+                        <div className="grid md:grid-cols-2 gap-3 mb-3">
+                          <input value={row.studentName} onChange={(e) => updateScanDraftStudent(idx, { studentName: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Student Name" />
+                          <input value={row.className} onChange={(e) => updateScanDraftStudent(idx, { className: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Class Name" />
+                        </div>
+                        <div className="space-y-2">
+                          {Object.entries(row.marks || {}).map(([subject, value]) => (
+                            <div key={subject} className="grid grid-cols-[1fr_100px] gap-2 items-center">
+                              <input value={subject} readOnly className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm font-semibold" />
+                              <input value={String(value ?? '')} onChange={(e) => updateScanDraftMark(idx, subject, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-center font-bold" />
+                            </div>
+                          ))}
+                          <button onClick={() => addSubjectToScannedRow(idx)} className="text-xs font-bold text-violet-700 hover:underline">+ Add Subject</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center"><h3 className="font-bold">Database: {activeClass}</h3><span className="text-xs text-gray-500 font-semibold">{migrationStatus}</span></div>
@@ -826,6 +901,7 @@ export default function MarksheetApp() {
           )
         })}
       </div>
+      <AiChatWidget />
     </>
   )
 }
