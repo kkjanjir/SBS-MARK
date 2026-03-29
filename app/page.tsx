@@ -438,25 +438,45 @@ export default function MarksheetApp() {
   };
 
   // Backward-compatible handlers for the review table UI (if present in deployed JSX).
-  const updateScanDraftStudent = (index: number, field: 'studentName' | 'className', value: string) => {
+  const updateScanDraftStudent = (
+    index: number,
+    fieldOrPatch: 'studentName' | 'className' | Partial<ScanDraftRow>,
+    value?: string
+  ) => {
     setScanDraftRows((prev) =>
-      prev.map((row, idx) => (idx === index ? { ...row, [field]: value } : row))
+      prev.map((row, idx) => {
+        if (idx !== index) return row;
+        if (typeof fieldOrPatch === 'string') return { ...row, [fieldOrPatch]: value ?? '' };
+        return { ...row, ...fieldOrPatch };
+      })
     );
   };
 
-  const updateScanDraftMark = (index: number, subject: string, mark: string) => {
+  const updateScanDraftMark = (
+    index: number,
+    subjectOrMarks: string | Record<string, number | string>,
+    mark?: string
+  ) => {
     setScanDraftRows((prev) =>
-      prev.map((row, idx) =>
-        idx === index
-          ? {
-              ...row,
-              marks: {
-                ...row.marks,
-                [subject]: mark,
-              },
-            }
-          : row
-      )
+      prev.map((row, idx) => {
+        if (idx !== index) return row;
+        if (typeof subjectOrMarks === 'string') {
+          return {
+            ...row,
+            marks: {
+              ...row.marks,
+              [subjectOrMarks]: mark ?? '',
+            },
+          };
+        }
+        return {
+          ...row,
+          marks: {
+            ...row.marks,
+            ...subjectOrMarks,
+          },
+        };
+      })
     );
   };
 
