@@ -1,10 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp, ScanLine } from 'lucide-react';
-import { backupToDrive, getAccessToken, restoreFromDrive } from './driveSync';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, Download, Upload, FileUp, ScanLine } from 'lucide-react';
 import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
-import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
-import { parseSupabaseCsv } from './csvImport';
 import { extractStudentsFromClassSheet, fileToBase64, type GeminiScannedStudent } from './geminiBatchScan';
 import AiChatWidget from './AiChatWidget';
 
@@ -25,9 +22,6 @@ const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 
 export default function MarksheetApp() {
-  const [isOnline, setIsOnline] = useState(true);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
   const [step, setStep] = useState(1);
@@ -47,13 +41,13 @@ export default function MarksheetApp() {
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
   const [migrationStatus, setMigrationStatus] = useState('');
-  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [isScanningSheet, setIsScanningSheet] = useState(false);
   const [isApplyingScan, setIsApplyingScan] = useState(false);
   const [scanProgress, setScanProgress] = useState('');
   const [scanDraftRows, setScanDraftRows] = useState<GeminiScannedStudent[]>([]);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const jsonImportRef = useRef<HTMLInputElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
@@ -66,22 +60,105 @@ export default function MarksheetApp() {
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarksState>({});
 
-  const currentSubjectsList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+  function getSubjectsFromMarks(marksData: MarksState | undefined) {
+    return Object.keys(marksData || {}).map((s) => s.trim()).filter(Boolean);
+  }
 
-  // 🌐 OFFLINE ENGINE (Service Worker & Network Status)
+  function getSubjectsForClass(clsName: string, marksData?: MarksState) {
+    const configured = subjectConfig[clsName] || [];
+    const classSubjects = dbStudents
+      .filter((row) => row.class_name === clsName)
+      .flatMap((row) => getSubjectsFromMarks(row.marks_data));
+    const adHoc = getSubjectsFromMarks(marksData);
+    const merged = Array.from(new Set([...configured, ...classSubjects, ...adHoc]));
+    return merged.length ? merged : DEFAULT_SUBJECTS;
+  }
+
+  function parseCsvLine(line: string): string[] {
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+      const char = line[i];
+      const next = line[i + 1];
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    values.push(current.trim());
+    return values;
+  }
+
+  function splitCsvRows(text: string): string[] {
+    const rows: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      const next = text[i + 1];
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+          current += char;
+        }
+        continue;
+      }
+
+      if ((char === '\n' || char === '\r') && !inQuotes) {
+        if (current.trim()) rows.push(current);
+        current = '';
+        if (char === '\r' && next === '\n') i += 1;
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current.trim()) rows.push(current);
+    return rows;
+  }
+
+  function normalizeHeader(header: string) {
+    return header.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  const standardHeaderMap: Record<string, 'name' | 'roll' | 'class' | 'mother' | 'father' | 'gender'> = {
+    name: 'name',
+    studentname: 'name',
+    roll: 'roll',
+    rollno: 'roll',
+    rollnumber: 'roll',
+    class: 'class',
+    classname: 'class',
+    mother: 'mother',
+    mothersname: 'mother',
+    father: 'father',
+    fathersname: 'father',
+    gender: 'gender',
+  };
+
+  const currentSubjectsList = getSubjectsForClass(activeClass, marks);
+
+  // 🌐 OFFLINE ENGINE (Service Worker)
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Registration failed: ', err));
-    }
-    setIsOnline(navigator.onLine);
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
     }
   }, []);
 
@@ -107,18 +184,12 @@ export default function MarksheetApp() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      if (!isOnline) {
-        setMigrationStatus('Offline: loading from IndexedDB only.');
-      } else {
-        setMigrationStatus('Checking local data...');
-        const result = await fetchOnceFromSupabaseToIndexedDb();
-        setMigrationStatus(result.message);
-      }
+      setMigrationStatus('Loading local IndexedDB data...');
       await loadStudentsFromLocal();
-      setIsCheckingAuth(false);
+      setMigrationStatus('Local IndexedDB ready.');
     };
     bootstrap();
-  }, [isOnline]);
+  }, []);
 
   useEffect(() => {
     if (view === 'dashboard') loadStudentsFromLocal();
@@ -161,7 +232,6 @@ export default function MarksheetApp() {
       await deleteRecord(id);
       setDbStudents(prev => prev.filter(s => s.id !== id));
       setIsLoadingList(false);
-      void tryBackgroundDriveBackup();
     }
   };
 
@@ -192,7 +262,6 @@ export default function MarksheetApp() {
       }
     }
     await putRecord(payload);
-    void tryBackgroundDriveBackup();
 
     setIsSaving(false);
     await loadStudentsFromLocal();
@@ -233,7 +302,6 @@ export default function MarksheetApp() {
       await putRecord(payload);
       if (!editingId) setEditingId(draftId);
       await loadStudentsFromLocal();
-      void tryBackgroundDriveBackup();
     }, 180);
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -244,7 +312,7 @@ export default function MarksheetApp() {
   const resetMarks = (preserveAttendance: boolean = false) => {
     setEditingId(null);
     const initial: MarksState = {};
-    const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+    const subList = getSubjectsForClass(activeClass);
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
     setExtraDetails(prev => ({ 
@@ -265,7 +333,7 @@ export default function MarksheetApp() {
   };
 
   const getCalculations = (mObj: MarksState, clsName: string) => {
-    const subs = subjectConfig[clsName] || DEFAULT_SUBJECTS;
+    const subs = getSubjectsForClass(clsName, mObj);
     let gTotal = 0;
     subs.forEach(sub => { gTotal += (Number(mObj[sub]?.t1)||0) + (Number(mObj[sub]?.t2)||0) + (Number(mObj[sub]?.t3)||0); });
     const mMax = subs.length * 200;
@@ -306,45 +374,6 @@ export default function MarksheetApp() {
     resetMarks(false);
   };
 
-  const handleDriveBackup = async () => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      alert('Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env');
-      return;
-    }
-    try {
-      setIsDriveSyncing(true);
-      const token = await getAccessToken(clientId);
-      const records = await getAllRecords();
-      await backupToDrive(token, records);
-      alert(`Backup successful. ${records.length} records uploaded to Google Drive.`);
-    } catch (error: any) {
-      alert(error.message || 'Drive backup failed.');
-    } finally {
-      setIsDriveSyncing(false);
-    }
-  };
-
-  const handleDriveRestore = async () => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      alert('Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env');
-      return;
-    }
-    try {
-      setIsDriveSyncing(true);
-      const token = await getAccessToken(clientId);
-      const records = await restoreFromDrive(token);
-      await clearAllRecords();
-      await putManyRecords(records);
-      await loadStudentsFromLocal();
-      alert(`Restore successful. ${records.length} records restored from Google Drive.`);
-    } catch (error: any) {
-      alert(error.message || 'Drive restore failed.');
-    } finally {
-      setIsDriveSyncing(false);
-    }
-  };
 
   const handleCsvFileImport = async (e: any) => {
     const file = e.target.files?.[0];
@@ -353,22 +382,139 @@ export default function MarksheetApp() {
     try {
       setIsImportingCsv(true);
       const text = await file.text();
-      const records = parseSupabaseCsv(text);
+      const rows = splitCsvRows(text);
+      if (rows.length < 2) {
+        alert('No valid CSV rows found.');
+        return;
+      }
+
+      const headers = parseCsvLine(rows[0]);
+      const normalizedHeaders = headers.map(normalizeHeader);
+      const records: StudentRecord[] = [];
+      const classSubjectBucket: Record<string, Set<string>> = {};
+
+      for (let i = 1; i < rows.length; i += 1) {
+        const values = parseCsvLine(rows[i]);
+        if (!values.some((value) => value.trim())) continue;
+
+        const standardValues: Record<string, string> = {};
+        const marksData: MarksState = {};
+
+        headers.forEach((header, idx) => {
+          const rawHeader = (header || '').trim();
+          const normalized = normalizedHeaders[idx];
+          const value = (values[idx] || '').trim();
+          if (!rawHeader) return;
+
+          const mapped = standardHeaderMap[normalized];
+          if (mapped) {
+            standardValues[mapped] = value;
+            return;
+          }
+
+          if (!value) return;
+          marksData[rawHeader] = { t1: '', t2: '', t3: value };
+        });
+
+        const studentName = (standardValues.name || '').toUpperCase();
+        const rollNo = standardValues.roll || '';
+        const className = normalizeClassName(standardValues.class || activeClass || '');
+
+        if (!studentName || !className) continue;
+
+        Object.keys(marksData).forEach((subject) => {
+          if (!classSubjectBucket[className]) classSubjectBucket[className] = new Set();
+          classSubjectBucket[className].add(subject);
+        });
+
+        const now = new Date().toISOString();
+        records.push({
+          id: crypto.randomUUID(),
+          student_name: studentName,
+          roll_no: rollNo,
+          class_name: className,
+          student_data: {
+            name: studentName,
+            roll: rollNo,
+            mother: (standardValues.mother || '').toUpperCase(),
+            father: (standardValues.father || '').toUpperCase(),
+            gender: (standardValues.gender || 'MALE').toUpperCase(),
+            photo: null,
+          },
+          marks_data: marksData,
+          extra_data: { attendance: '', remark: '', issueDate: defaultIssue, coScholastic },
+          created_at: now,
+          updated_at: now,
+        });
+      }
+
       if (!records.length) {
-        alert('No valid records found in CSV.');
+        alert('No valid student records found in CSV.');
         return;
       }
 
       await putManyRecords(records);
+      const nextConfig = { ...subjectConfig };
+      Object.entries(classSubjectBucket).forEach(([className, subjects]) => {
+        const merged = Array.from(new Set([...(nextConfig[className] || []), ...Array.from(subjects)]));
+        if (merged.length) nextConfig[className] = merged;
+      });
+      setSubjectConfig(nextConfig);
+      localStorage.setItem('sbsSubjects', JSON.stringify(nextConfig));
+
       await loadStudentsFromLocal();
       setMigrationStatus(`CSV import complete: ${records.length} records loaded into IndexedDB.`);
-      void tryBackgroundDriveBackup();
       alert(`Imported ${records.length} records from CSV.`);
     } catch (error: any) {
       alert(error.message || 'CSV import failed.');
     } finally {
       setIsImportingCsv(false);
       if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
+
+  const handleExportLocalBackup = async () => {
+    const records = await getAllRecords();
+    const payload = JSON.stringify(records, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = `sbs-local-backup-${stamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportLocalBackup = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!Array.isArray(data)) {
+        alert('Invalid backup file: expected an array of records.');
+        return;
+      }
+
+      const validated = data.filter((row) => row && row.id && row.student_name && row.class_name);
+      if (!validated.length) {
+        alert('No valid records found in backup file.');
+        return;
+      }
+
+      await clearAllRecords();
+      await putManyRecords(validated);
+      await loadStudentsFromLocal();
+      setMigrationStatus(`Local backup restored: ${validated.length} records loaded.`);
+      alert(`Imported ${validated.length} records from local backup.`);
+    } catch (error: any) {
+      alert(error.message || 'Local backup import failed.');
+    } finally {
+      if (jsonImportRef.current) jsonImportRef.current.value = '';
     }
   };
 
@@ -486,7 +632,6 @@ export default function MarksheetApp() {
         else inserted += 1;
       }
       await loadStudentsFromLocal();
-      void tryBackgroundDriveBackup();
       const total = updated + inserted;
       setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
       alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
@@ -519,11 +664,6 @@ export default function MarksheetApp() {
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
-  // ==========================================
-  // VIEW 1: LOGIN SCREEN 🔒
-  // ==========================================
-  if (isCheckingAuth) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-schoolBlue" size={48}/></div>;
-
   const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
   return (
@@ -543,12 +683,6 @@ export default function MarksheetApp() {
       `}} />
 
       <div id="app-ui">
-        {!isOnline && (
-          <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
-            <WifiOff size={16}/> Offline Mode: Local autosave active. Cloud migration/Drive sync require internet.
-          </div>
-        )}
-
         {view === 'dashboard' ? (
           <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
             <div className="w-full max-w-5xl">
@@ -610,17 +744,18 @@ export default function MarksheetApp() {
                 <div className="flex flex-wrap gap-3 items-center justify-start">
                   <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileImport} />
                   <input ref={scanInputRef} type="file" accept="image/*" className="hidden" onChange={handleScanClassSheet} />
+                  <input ref={jsonImportRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportLocalBackup} />
                   <button onClick={() => scanInputRef.current?.click()} disabled={isScanningSheet} className="bg-white text-violet-700 border-2 border-violet-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-violet-50 disabled:opacity-60">
                     {isScanningSheet ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={20} />} Scan Class Sheet
                   </button>
                   <button onClick={() => csvInputRef.current?.click()} disabled={isImportingCsv} className="bg-white text-sky-700 border-2 border-sky-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-sky-50 disabled:opacity-60">
                     {isImportingCsv ? <Loader2 className="animate-spin" size={18} /> : <FileUp size={20} />} Import CSV
                   </button>
-                  <button onClick={handleDriveBackup} disabled={isDriveSyncing} className="bg-white text-emerald-700 border-2 border-emerald-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 flex-1 sm:flex-none disabled:opacity-60">
-                    {isDriveSyncing ? <Loader2 className="animate-spin" size={18} /> : <DownloadCloud size={20} />} Backup to Drive
+                  <button onClick={handleExportLocalBackup} className="bg-white text-emerald-700 border-2 border-emerald-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 flex-1 sm:flex-none">
+                    <Download size={20} /> Export Local Backup
                   </button>
-                  <button onClick={handleDriveRestore} disabled={isDriveSyncing} className="bg-white text-indigo-700 border-2 border-indigo-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 flex-1 sm:flex-none disabled:opacity-60">
-                    {isDriveSyncing ? <Loader2 className="animate-spin" size={18} /> : <UploadCloud size={20} />} Restore from Drive
+                  <button onClick={() => jsonImportRef.current?.click()} className="bg-white text-indigo-700 border-2 border-indigo-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 flex-1 sm:flex-none">
+                    <Upload size={20} /> Import Local Backup
                   </button>
                   <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
                     <Settings size={20} /> Subjects
@@ -896,7 +1031,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(s.marks_data, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={subjectConfig[s.class_name] || DEFAULT_SUBJECTS} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data} marks={s.marks_data} subjectsList={getSubjectsForClass(s.class_name, s.marks_data)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} />
             </div>
           )
         })}
