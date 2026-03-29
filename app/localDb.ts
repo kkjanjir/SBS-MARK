@@ -109,3 +109,12 @@ export async function clearAllRecords(): Promise<void> {
   tx.objectStore(STORE_NAME).clear();
   await txComplete(tx);
 }
+
+export async function findRecordByNameAndClass(studentName: string, className: string): Promise<StudentRecord | null> {
+  const all = await getAllRecords();
+  const normalizedName = studentName.trim().toLowerCase();
+  const normalizedClass = className.trim().toLowerCase();
+  return all.find(
+    (row) => row.student_name.trim().toLowerCase() === normalizedName && row.class_name.trim().toLowerCase() === normalizedClass
+  ) || null;
+}

@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp, ScanLine } from 'lucide-react';
 import { backupToDrive, getAccessToken, restoreFromDrive } from './driveSync';
-import { clearAllRecords, deleteRecord, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
+import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
 import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
 import { parseSupabaseCsv } from './csvImport';
+import { extractStudentsFromClassSheet, fileToBase64, type GeminiScannedStudent } from './geminiBatchScan';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -47,7 +48,10 @@ export default function MarksheetApp() {
   const [migrationStatus, setMigrationStatus] = useState('');
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [isScanningSheet, setIsScanningSheet] = useState(false);
+  const [scanProgress, setScanProgress] = useState('');
   const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -365,6 +369,92 @@ export default function MarksheetApp() {
     }
   };
 
+  const normalizeClassName = (value: string) => value.replace(/^class\s*/i, '').trim().toUpperCase();
+
+  const mergeScannedMarks = (existing: MarksState, incoming: Record<string, number | string>): MarksState => {
+    const merged: MarksState = { ...existing };
+    Object.entries(incoming).forEach(([subject, rawMark]) => {
+      const markText = String(rawMark).trim();
+      const prev = merged[subject] || { t1: '', t2: '', t3: '' };
+      merged[subject] = { ...prev, t3: markText };
+    });
+    return merged;
+  };
+
+  const upsertScannedStudent = async (row: GeminiScannedStudent) => {
+    const normalizedClass = normalizeClassName(row.className);
+    const existing = await findRecordByNameAndClass(row.studentName, normalizedClass);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const updatedRecord: StudentRecord = {
+        ...existing,
+        marks_data: mergeScannedMarks(existing.marks_data || {}, row.marks || {}),
+        updated_at: now,
+      };
+      await putRecord(updatedRecord);
+      return 'updated' as const;
+    }
+
+    const newRecord: StudentRecord = {
+      id: crypto.randomUUID(),
+      student_name: row.studentName,
+      roll_no: '',
+      class_name: normalizedClass,
+      student_data: {
+        name: row.studentName,
+        roll: '',
+        mother: '',
+        father: '',
+        gender: 'MALE',
+        photo: null,
+      },
+      marks_data: mergeScannedMarks({}, row.marks || {}),
+      extra_data: { attendance: '', remark: '', issueDate: defaultIssue, coScholastic },
+      created_at: now,
+      updated_at: now,
+    };
+    await putRecord(newRecord);
+    return 'inserted' as const;
+  };
+
+  const handleScanClassSheet = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsScanningSheet(true);
+      setScanProgress('Uploading image to Gemini...');
+      const base64 = await fileToBase64(file);
+      const scannedRows = await extractStudentsFromClassSheet(base64, file.type || 'image/jpeg');
+      if (!scannedRows.length) {
+        alert('No students detected in scanned sheet.');
+        return;
+      }
+
+      let updated = 0;
+      let inserted = 0;
+      for (let i = 0; i < scannedRows.length; i += 1) {
+        setScanProgress(`Processing student ${i + 1} of ${scannedRows.length}...`);
+        const action = await upsertScannedStudent(scannedRows[i]);
+        if (action === 'updated') updated += 1;
+        else inserted += 1;
+      }
+
+      await loadStudentsFromLocal();
+      void tryBackgroundDriveBackup();
+      const total = updated + inserted;
+      setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+    } catch (error: any) {
+      setScanProgress('');
+      alert(error.message || 'Failed to scan class sheet.');
+    } finally {
+      setIsScanningSheet(false);
+      if (scanInputRef.current) scanInputRef.current.value = '';
+    }
+  };
+
   const triggerSinglePrint = () => {
     document.body.classList.add('printing-single');
     document.title = `${student.name || 'Student'}_Class_${activeClass}`;
@@ -476,6 +566,10 @@ export default function MarksheetApp() {
 
                 <div className="flex flex-wrap gap-3 items-center justify-start">
                   <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileImport} />
+                  <input ref={scanInputRef} type="file" accept="image/*" className="hidden" onChange={handleScanClassSheet} />
+                  <button onClick={() => scanInputRef.current?.click()} disabled={isScanningSheet} className="bg-white text-violet-700 border-2 border-violet-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-violet-50 disabled:opacity-60">
+                    {isScanningSheet ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={20} />} Scan Class Sheet
+                  </button>
                   <button onClick={() => csvInputRef.current?.click()} disabled={isImportingCsv} className="bg-white text-sky-700 border-2 border-sky-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-sky-50 disabled:opacity-60">
                     {isImportingCsv ? <Loader2 className="animate-spin" size={18} /> : <FileUp size={20} />} Import CSV
                   </button>
@@ -496,6 +590,7 @@ export default function MarksheetApp() {
                   </button>
                 </div>
               </div>
+              {scanProgress && <div className="mb-4 text-sm font-bold text-violet-700 bg-violet-50 border border-violet-100 px-4 py-2 rounded-xl">{scanProgress}</div>}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center"><h3 className="font-bold">Database: {activeClass}</h3><span className="text-xs text-gray-500 font-semibold">{migrationStatus}</span></div>
