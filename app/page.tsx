@@ -1,12 +1,12 @@
 'use client'
-import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
-
-// 🚀 SUPABASE CONNECTION
-const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
-const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { useState, useEffect, useRef } from 'react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp, ScanLine } from 'lucide-react';
+import { backupToDrive, getAccessToken, restoreFromDrive } from './driveSync';
+import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
+import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
+import { parseSupabaseCsv } from './csvImport';
+import { extractStudentsFromClassSheet, fileToBase64, type GeminiScannedStudent } from './geminiBatchScan';
+import AiChatWidget from './AiChatWidget';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -24,18 +24,9 @@ const THEMES = {
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
 
-type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
-type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
-
 export default function MarksheetApp() {
-  // 🔒 AUTH & NETWORK STATES
-  const [session, setSession] = useState<any>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isOnline, setIsOnline] = useState(true);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   // APP STATES
   const [view, setView] = useState<'dashboard' | 'editor'>('dashboard');
@@ -51,10 +42,19 @@ export default function MarksheetApp() {
   const [tempSubjects, setTempSubjects] = useState<string[]>([]);
   const [newSubInput, setNewSubInput] = useState('');
 
-  const [dbStudents, setDbStudents] = useState<any[]>([]);
+  const [dbStudents, setDbStudents] = useState<StudentRecord[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
+  const [migrationStatus, setMigrationStatus] = useState('');
+  const [isDriveSyncing, setIsDriveSyncing] = useState(false);
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [isScanningSheet, setIsScanningSheet] = useState(false);
+  const [isApplyingScan, setIsApplyingScan] = useState(false);
+  const [scanProgress, setScanProgress] = useState('');
+  const [scanDraftRows, setScanDraftRows] = useState<GeminiScannedStudent[]>([]);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -78,14 +78,10 @@ export default function MarksheetApp() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsCheckingAuth(false); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); });
     
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      subscription.unsubscribe();
     }
   }, []);
 
@@ -102,26 +98,33 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   }, [step]);
 
-  const fetchStudentsFromCloud = async () => {
-    if (!session || !isOnline) { setIsLoadingList(false); return; }
+  const loadStudentsFromLocal = async () => {
     setIsLoadingList(true);
-    const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
-    if (data) setDbStudents(data);
+    const data = await getAllRecords();
+    setDbStudents(data);
     setIsLoadingList(false);
   };
 
-  useEffect(() => { if (session && view === 'dashboard') fetchStudentsFromCloud(); }, [session, view, isOnline]);
+  useEffect(() => {
+    const bootstrap = async () => {
+      if (!isOnline) {
+        setMigrationStatus('Offline: loading from IndexedDB only.');
+      } else {
+        setMigrationStatus('Checking local data...');
+        const result = await fetchOnceFromSupabaseToIndexedDb();
+        setMigrationStatus(result.message);
+      }
+      await loadStudentsFromLocal();
+      setIsCheckingAuth(false);
+    };
+    bootstrap();
+  }, [isOnline]);
 
-  const handleLogin = async (e: any) => {
-    e.preventDefault();
-    if(!isOnline) return alert("Please connect to internet to Login!");
-    setIsLoggingIn(true); setLoginError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setLoginError(error.message);
-    setIsLoggingIn(false);
-  };
+  useEffect(() => {
+    if (view === 'dashboard') loadStudentsFromLocal();
+  }, [view]);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); setView('dashboard'); };
+  const handleLogout = async () => { setView('dashboard'); };
   const handleDetailChange = (e: any) => { setStudent({ ...student, [e.target.name]: e.target.value.toUpperCase() }); };
 
   const handleMarkChange = (sub: string, term: 't1' | 't2' | 't3', value: string) => {
@@ -153,58 +156,89 @@ export default function MarksheetApp() {
 
   const deleteStudent = async (id: string, name: string, e: any) => {
     e.stopPropagation(); 
-    if(!isOnline) return alert("You must be online to delete records.");
     if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name}?`)) {
       setIsLoadingList(true);
-      const { error } = await supabase.from('marks_records').delete().eq('id', id);
-      if (error) { alert("Failed to delete: " + error.message); } 
-      else { setDbStudents(prev => prev.filter(s => s.id !== id)); }
+      await deleteRecord(id);
+      setDbStudents(prev => prev.filter(s => s.id !== id));
       setIsLoadingList(false);
+      void tryBackgroundDriveBackup();
     }
   };
 
   const saveToCloud = async (addNext: boolean = false) => {
-    if(!isOnline) return alert("You are offline! Please connect to internet to save data.");
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     
     let myTotal = getCalculations(marks, activeClass).grandTotal;
-    const payload = { student_name: student.name, roll_no: student.roll, class_name: activeClass, student_data: { ...student, photo: studentPhoto }, marks_data: marks, extra_data: { ...extraDetails, coScholastic, total: myTotal } };
+    const now = new Date().toISOString();
+    const payload: StudentRecord = {
+      id: editingId || crypto.randomUUID(),
+      student_name: student.name,
+      roll_no: student.roll,
+      class_name: activeClass,
+      student_data: { ...student, photo: studentPhoto },
+      marks_data: marks,
+      extra_data: { ...extraDetails, coScholastic, total: myTotal },
+      created_at: editingId ? (dbStudents.find(s => s.id === editingId)?.created_at || now) : now,
+      updated_at: now,
+    };
 
     setIsSaving(true);
-    let error = null;
-
-    if (editingId) {
-      const { error: updateError } = await supabase.from('marks_records').update(payload).eq('id', editingId);
-      error = updateError;
-    } else {
+    if (!editingId) {
       const isDuplicate = dbStudents.some(s => s.class_name === activeClass && s.roll_no === student.roll && s.student_name.toUpperCase() === student.name.toUpperCase());
       if (isDuplicate) {
         setIsSaving(false);
         alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) is already saved in Class ${activeClass}!`);
         return;
       }
-      const { error: insertError } = await supabase.from('marks_records').insert([payload]);
-      error = insertError;
     }
+    await putRecord(payload);
+    void tryBackgroundDriveBackup();
 
     setIsSaving(false);
-    if (error) { alert("Save failed! " + error.message); } 
-    else {
-      setLastSaved(`Saved: ${student.name} (Roll: ${student.roll})`);
-      if (addNext) {
-        const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
-        // Reset state
-        setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
-        // Preserve Attendance for Next Record
-        resetMarks(true);
-        setStep(1);
-        setTimeout(() => setLastSaved(''), 4000);
-      } else {
-        setView('dashboard');
-        resetMarks(false);
-      }
+    await loadStudentsFromLocal();
+    setLastSaved(`Saved locally: ${student.name} (Roll: ${student.roll})`);
+    if (addNext) {
+      const nextRoll = isNaN(Number(student.roll)) ? "" : (Number(student.roll) + 1).toString();
+      setStudent({ name: "", roll: nextRoll, mother: "", father: "", gender: "MALE" });
+      resetMarks(true);
+      setStep(1);
+      setTimeout(() => setLastSaved(''), 4000);
+    } else {
+      setView('dashboard');
+      resetMarks(false);
     }
   };
+
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (view !== 'editor') return;
+    if (!student.name || !student.roll) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      const now = new Date().toISOString();
+      const total = getCalculations(marks, activeClass).grandTotal;
+      const draftId = editingId || `draft-${activeClass}-${student.roll}-${student.name}`.replace(/\s+/g, '-');
+      const existing = dbStudents.find((s) => s.id === draftId);
+      const payload: StudentRecord = {
+        id: draftId,
+        student_name: student.name,
+        roll_no: student.roll,
+        class_name: activeClass,
+        student_data: { ...student, photo: studentPhoto },
+        marks_data: marks,
+        extra_data: { ...extraDetails, coScholastic, total },
+        created_at: existing?.created_at || now,
+        updated_at: now,
+      };
+      await putRecord(payload);
+      if (!editingId) setEditingId(draftId);
+      await loadStudentsFromLocal();
+      void tryBackgroundDriveBackup();
+    }, 180);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [marks, student, extraDetails, coScholastic, studentPhoto, activeClass, view]);
 
   // Accepts a parameter to keep attendance intact
   const resetMarks = (preserveAttendance: boolean = false) => {
@@ -272,6 +306,198 @@ export default function MarksheetApp() {
     resetMarks(false);
   };
 
+  const handleDriveBackup = async () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      alert('Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env');
+      return;
+    }
+    try {
+      setIsDriveSyncing(true);
+      const token = await getAccessToken(clientId);
+      const records = await getAllRecords();
+      await backupToDrive(token, records);
+      alert(`Backup successful. ${records.length} records uploaded to Google Drive.`);
+    } catch (error: any) {
+      alert(error.message || 'Drive backup failed.');
+    } finally {
+      setIsDriveSyncing(false);
+    }
+  };
+
+  const handleDriveRestore = async () => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      alert('Missing NEXT_PUBLIC_GOOGLE_CLIENT_ID in .env');
+      return;
+    }
+    try {
+      setIsDriveSyncing(true);
+      const token = await getAccessToken(clientId);
+      const records = await restoreFromDrive(token);
+      await clearAllRecords();
+      await putManyRecords(records);
+      await loadStudentsFromLocal();
+      alert(`Restore successful. ${records.length} records restored from Google Drive.`);
+    } catch (error: any) {
+      alert(error.message || 'Drive restore failed.');
+    } finally {
+      setIsDriveSyncing(false);
+    }
+  };
+
+  const handleCsvFileImport = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImportingCsv(true);
+      const text = await file.text();
+      const records = parseSupabaseCsv(text);
+      if (!records.length) {
+        alert('No valid records found in CSV.');
+        return;
+      }
+
+      await putManyRecords(records);
+      await loadStudentsFromLocal();
+      setMigrationStatus(`CSV import complete: ${records.length} records loaded into IndexedDB.`);
+      void tryBackgroundDriveBackup();
+      alert(`Imported ${records.length} records from CSV.`);
+    } catch (error: any) {
+      alert(error.message || 'CSV import failed.');
+    } finally {
+      setIsImportingCsv(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  };
+
+  const normalizeClassName = (value: string) => value.replace(/^class\s*/i, '').trim().toUpperCase();
+
+  const mergeScannedMarks = (existing: MarksState, incoming: Record<string, number | string>): MarksState => {
+    const merged: MarksState = { ...existing };
+    Object.entries(incoming).forEach(([subject, rawMark]) => {
+      const markText = String(rawMark).trim();
+      const prev = merged[subject] || { t1: '', t2: '', t3: '' };
+      merged[subject] = { ...prev, t3: markText };
+    });
+    return merged;
+  };
+
+  const upsertScannedStudent = async (row: GeminiScannedStudent) => {
+    const normalizedClass = normalizeClassName(row.className);
+    const existing = await findRecordByNameAndClass(row.studentName, normalizedClass);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      const updatedRecord: StudentRecord = {
+        ...existing,
+        marks_data: mergeScannedMarks(existing.marks_data || {}, row.marks || {}),
+        updated_at: now,
+      };
+      await putRecord(updatedRecord);
+      return 'updated' as const;
+    }
+
+    const newRecord: StudentRecord = {
+      id: crypto.randomUUID(),
+      student_name: row.studentName,
+      roll_no: '',
+      class_name: normalizedClass,
+      student_data: {
+        name: row.studentName,
+        roll: '',
+        mother: '',
+        father: '',
+        gender: 'MALE',
+        photo: null,
+      },
+      marks_data: mergeScannedMarks({}, row.marks || {}),
+      extra_data: { attendance: '', remark: '', issueDate: defaultIssue, coScholastic },
+      created_at: now,
+      updated_at: now,
+    };
+    await putRecord(newRecord);
+    return 'inserted' as const;
+  };
+
+  const handleScanClassSheet = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsScanningSheet(true);
+      setScanProgress('Uploading image to Gemini...');
+      const base64 = await fileToBase64(file);
+      const scannedRows = await extractStudentsFromClassSheet(base64, file.type || 'image/jpeg');
+      if (!scannedRows.length) {
+        alert('No students detected in scanned sheet.');
+        return;
+      }
+      setScanDraftRows(scannedRows);
+      setScanProgress(`Review ${scannedRows.length} scanned students before saving.`);
+    } catch (error: any) {
+      setScanProgress('');
+      alert(error.message || 'Failed to scan class sheet.');
+    } finally {
+      setIsScanningSheet(false);
+      if (scanInputRef.current) scanInputRef.current.value = '';
+    }
+  };
+
+  const updateScanDraftStudent = (idx: number, patch: Partial<GeminiScannedStudent>) => {
+    setScanDraftRows((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+
+  const updateScanDraftMark = (idx: number, subject: string, value: string) => {
+    setScanDraftRows((prev) =>
+      prev.map((row, i) =>
+        i === idx
+          ? { ...row, marks: { ...row.marks, [subject]: value } }
+          : row
+      )
+    );
+  };
+
+  const addSubjectToScannedRow = (idx: number) => {
+    const subject = window.prompt('Enter subject name');
+    if (!subject) return;
+    const normalized = subject.trim();
+    if (!normalized) return;
+    setScanDraftRows((prev) =>
+      prev.map((row, i) =>
+        i === idx && !Object.keys(row.marks).includes(normalized)
+          ? { ...row, marks: { ...row.marks, [normalized]: '' } }
+          : row
+      )
+    );
+  };
+
+  const confirmSaveScannedRows = async () => {
+    if (!scanDraftRows.length) return;
+    try {
+      setIsApplyingScan(true);
+      let updated = 0;
+      let inserted = 0;
+      for (let i = 0; i < scanDraftRows.length; i += 1) {
+        setScanProgress(`Processing student ${i + 1} of ${scanDraftRows.length}...`);
+        const action = await upsertScannedStudent(scanDraftRows[i]);
+        if (action === 'updated') updated += 1;
+        else inserted += 1;
+      }
+      await loadStudentsFromLocal();
+      void tryBackgroundDriveBackup();
+      const total = updated + inserted;
+      setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
+      setScanDraftRows([]);
+    } catch (error: any) {
+      alert(error.message || 'Failed to save scanned rows.');
+    } finally {
+      setIsApplyingScan(false);
+    }
+  };
+
   const triggerSinglePrint = () => {
     document.body.classList.add('printing-single');
     document.title = `${student.name || 'Student'}_Class_${activeClass}`;
@@ -298,50 +524,6 @@ export default function MarksheetApp() {
   // ==========================================
   if (isCheckingAuth) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-schoolBlue" size={48}/></div>;
 
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 relative overflow-hidden">
-        {!isOnline && (
-          <div className="absolute top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-bold flex items-center justify-center gap-2 z-50 animate-in slide-in-from-top">
-            <WifiOff size={18}/> No Internet Connection
-          </div>
-        )}
-        
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-red-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
-        <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
-        
-        <div className="bg-white/80 backdrop-blur-xl p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-md relative z-10 border border-white">
-          <div className="text-center mb-8">
-            <div className="bg-white w-24 h-24 rounded-full mx-auto flex items-center justify-center shadow-lg mb-4 p-2 border-4 border-schoolRed/10">
-              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
-            </div>
-            {/* Added dots S.B.S. */}
-            <h1 className="text-2xl font-extrabold text-schoolRed" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
-            <p className="text-gray-500 font-bold text-sm mt-1">Admin Portal Login</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            {loginError && <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold text-center border border-red-100">{loginError}</div>}
-            <div className="relative">
-              <UserIcon className="absolute left-4 top-3.5 text-gray-400" size={20}/>
-              <input type="email" required placeholder="Admin Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-4 top-3.5 text-gray-400" size={20}/>
-              <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border-2 border-gray-100 rounded-2xl pl-12 pr-4 py-3 outline-none focus:border-schoolBlue transition-all font-semibold" />
-            </div>
-            <button type="submit" disabled={isLoggingIn || !isOnline} className={`w-full text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 ${isOnline ? 'bg-schoolBlue hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'}`}>
-              {isLoggingIn ? <Loader2 className="animate-spin"/> : "Secure Login"}
-            </button>
-          </form>
-          <div className="mt-8 text-center text-xs text-gray-400 font-semibold flex items-center justify-center gap-1">
-            <Lock size={12}/> Protected by Supabase Auth
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
   return (
@@ -363,7 +545,7 @@ export default function MarksheetApp() {
       <div id="app-ui">
         {!isOnline && (
           <div className="bg-red-600 text-white text-center py-1.5 font-bold flex items-center justify-center gap-2 text-sm">
-            <WifiOff size={16}/> Offline Mode: Data cannot be saved until internet is restored.
+            <WifiOff size={16}/> Offline Mode: Local autosave active. Cloud migration/Drive sync require internet.
           </div>
         )}
 
@@ -425,7 +607,21 @@ export default function MarksheetApp() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-3 items-center justify-start">
+                  <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileImport} />
+                  <input ref={scanInputRef} type="file" accept="image/*" className="hidden" onChange={handleScanClassSheet} />
+                  <button onClick={() => scanInputRef.current?.click()} disabled={isScanningSheet} className="bg-white text-violet-700 border-2 border-violet-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-violet-50 disabled:opacity-60">
+                    {isScanningSheet ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={20} />} Scan Class Sheet
+                  </button>
+                  <button onClick={() => csvInputRef.current?.click()} disabled={isImportingCsv} className="bg-white text-sky-700 border-2 border-sky-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-sky-50 disabled:opacity-60">
+                    {isImportingCsv ? <Loader2 className="animate-spin" size={18} /> : <FileUp size={20} />} Import CSV
+                  </button>
+                  <button onClick={handleDriveBackup} disabled={isDriveSyncing} className="bg-white text-emerald-700 border-2 border-emerald-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-50 flex-1 sm:flex-none disabled:opacity-60">
+                    {isDriveSyncing ? <Loader2 className="animate-spin" size={18} /> : <DownloadCloud size={20} />} Backup to Drive
+                  </button>
+                  <button onClick={handleDriveRestore} disabled={isDriveSyncing} className="bg-white text-indigo-700 border-2 border-indigo-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 flex-1 sm:flex-none disabled:opacity-60">
+                    {isDriveSyncing ? <Loader2 className="animate-spin" size={18} /> : <UploadCloud size={20} />} Restore from Drive
+                  </button>
                   <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
                     <Settings size={20} /> Subjects
                   </button>
@@ -437,15 +633,58 @@ export default function MarksheetApp() {
                   </button>
                 </div>
               </div>
+              {scanProgress && <div className="mb-4 text-sm font-bold text-violet-700 bg-violet-50 border border-violet-100 px-4 py-2 rounded-xl">{scanProgress}</div>}
+              {scanDraftRows.length > 0 && (
+                <div className="mb-6 bg-white border border-violet-200 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-extrabold text-violet-700">Review & Edit Scanned Students ({scanDraftRows.length})</h3>
+                    <div className="flex gap-2">
+                      <button onClick={() => setScanDraftRows([])} className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 font-bold">Discard</button>
+                      <button onClick={confirmSaveScannedRows} disabled={isApplyingScan} className="px-4 py-2 rounded-lg bg-violet-700 text-white font-bold disabled:opacity-60">
+                        {isApplyingScan ? 'Saving...' : 'Confirm & Save to Database'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1">
+                    {scanDraftRows.map((row, idx) => (
+                      <div key={`${row.studentName}-${idx}`} className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+                        <div className="grid md:grid-cols-2 gap-3 mb-3">
+                          <input value={row.studentName} onChange={(e) => updateScanDraftStudent(idx, { studentName: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Student Name" />
+                          <input value={row.className} onChange={(e) => updateScanDraftStudent(idx, { className: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-2 font-bold" placeholder="Class Name" />
+                        </div>
+                        <div className="space-y-2">
+                          {Object.entries(row.marks || {}).map(([subject, value]) => (
+                            <div key={subject} className="grid grid-cols-[1fr_100px] gap-2 items-center">
+                              <input value={subject} readOnly className="border border-gray-200 rounded-lg px-3 py-2 bg-white text-sm font-semibold" />
+                              <input value={String(value ?? '')} onChange={(e) => updateScanDraftMark(idx, subject, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-center font-bold" />
+                            </div>
+                          ))}
+                          <button onClick={() => addSubjectToScannedRow(idx)} className="text-xs font-bold text-violet-700 hover:underline">+ Add Subject</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between"><h3 className="font-bold">Database: {activeClass}</h3></div>
+                <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center"><h3 className="font-bold">Database: {activeClass}</h3><span className="text-xs text-gray-500 font-semibold">{migrationStatus}</span></div>
                 <div className="divide-y divide-gray-100 min-h-[200px]">
                   {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
                     classFilteredStudents.filter(s => s.student_name.includes(searchQuery.toUpperCase())).map((s) => (
                       <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
-                        setEditingId(s.id); setStudent(s.student_data); setMarks(s.marks_data); setExtraDetails(s.extra_data || extraDetails); setCoScholastic(s.extra_data?.coScholastic || coScholastic); setStudentPhoto(s.student_data.photo || null); setView('editor');
+                        setEditingId(s.id);
+                        setStudent(s.student_data);
+                        setMarks(s.marks_data);
+                        setExtraDetails({
+                          attendance: s.extra_data?.attendance || "",
+                          remark: s.extra_data?.remark || "",
+                          issueDate: s.extra_data?.issueDate || defaultIssue,
+                        });
+                        setCoScholastic(s.extra_data?.coScholastic || coScholastic);
+                        setStudentPhoto(s.student_data.photo || null);
+                        setView('editor');
                       }}>
                         <div className="flex items-center gap-4">
                           {s.student_data?.photo ? <img src={s.student_data.photo} className="w-10 h-10 rounded-full object-cover object-top border" /> : <div className="h-10 w-10 bg-[#e0f7fa] rounded-full flex items-center justify-center text-schoolBlue font-bold">{s.student_name.charAt(0)}</div>}
@@ -481,8 +720,12 @@ export default function MarksheetApp() {
                     ))}
                   </div>
                   <div className="flex gap-2 mb-6">
-                    <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
-                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
+                    <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value)} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
+                    <button onClick={() => {
+                      const normalized = newSubInput.trim();
+                      const exists = tempSubjects.some((sub) => sub.trim().toLowerCase() === normalized.toLowerCase());
+                      if(normalized && !exists){ setTempSubjects([...tempSubjects, normalized]); setNewSubInput(''); }
+                    }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
                   </div>
                   <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
                 </div>
@@ -610,10 +853,10 @@ export default function MarksheetApp() {
                       </div>
 
                       <div className="mt-8 space-y-3">
-                        <button onClick={() => saveToCloud(true)} disabled={isSaving || !isOnline} className={`w-full text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 shadow-lg active:scale-95 transition-all ${isOnline ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400 cursor-not-allowed'}`}>
+                        <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 shadow-lg active:scale-95 transition-all bg-green-600 hover:bg-green-700 disabled:bg-gray-400">
                           {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next
                         </button>
-                        <button onClick={()=>saveToCloud(false)} disabled={!isOnline} className={`w-full text-white p-3 rounded-xl font-bold transition-colors shadow-md ${isOnline ? 'bg-schoolBlue hover:bg-blue-800' : 'bg-gray-400 cursor-not-allowed'}`}>Save & Close</button>
+                        <button onClick={()=>saveToCloud(false)} className="w-full text-white p-3 rounded-xl font-bold transition-colors shadow-md bg-schoolBlue hover:bg-blue-800">Save & Close</button>
                         
                         <div className="pt-2 border-t mt-4">
                           <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 shadow-lg active:scale-95 transition-all"><Printer size={20}/> Print / Save PDF (HD)</button>
@@ -658,6 +901,7 @@ export default function MarksheetApp() {
           )
         })}
       </div>
+      <AiChatWidget />
     </>
   )
 }
