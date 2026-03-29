@@ -19,9 +19,9 @@ NEXT_PUBLIC_GEMINI_API_KEY=...
 4. After initialization, reads/writes are local-only (offline-first), and editor changes are auto-saved.
 5. A background Drive backup attempt runs silently after local updates (plus manual backup/restore buttons).
 6. You can also import a Supabase CSV export from the dashboard via **Import CSV**.
-7. Use **Scan Class Sheet** to upload handwritten class sheets; Gemini extracts batch student marks and the app upserts them into IndexedDB.
-8. Before scan data is saved, a **Review & Edit** panel lets you correct names/classes/marks, then confirm.
-9. A floating **EduPrime AI Chatbot** is available in the bottom-right using Gemini `gemini-2.5-flash`.
+7. Use the floating **Janjir AI** side drawer (bottom-right toggle) to upload marksheet images and send custom extraction instructions.
+8. Janjir returns data in JSON markdown; you must **Review & Edit** and then click **Approve & Save** before any data is written to IndexedDB.
+9. The assistant runs on Gemini `gemini-2.5-flash` with persistent conversation context using `startChat()`.
 
 ### Google Drive backup/restore setup
 

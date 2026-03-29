@@ -1,12 +1,12 @@
 'use client'
 import { useState, useEffect, useRef } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp, ScanLine } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, LogOut, WifiOff, DownloadCloud, UploadCloud, FileUp } from 'lucide-react';
 import { backupToDrive, getAccessToken, restoreFromDrive } from './driveSync';
 import { clearAllRecords, deleteRecord, findRecordByNameAndClass, getAllRecords, putManyRecords, putRecord, type CoScholasticState, type MarksState, type StudentRecord } from './localDb';
 import { fetchOnceFromSupabaseToIndexedDb, tryBackgroundDriveBackup } from './dataSync';
 import { parseSupabaseCsv } from './csvImport';
-import { extractStudentsFromClassSheet, fileToBase64, type GeminiScannedStudent } from './geminiBatchScan';
-import AiChatWidget from './AiChatWidget';
+import type { GeminiScannedStudent } from './geminiBatchScan';
+import AIAssistantDrawer from './AIAssistantDrawer';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -49,12 +49,7 @@ export default function MarksheetApp() {
   const [migrationStatus, setMigrationStatus] = useState('');
   const [isDriveSyncing, setIsDriveSyncing] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
-  const [isScanningSheet, setIsScanningSheet] = useState(false);
-  const [isApplyingScan, setIsApplyingScan] = useState(false);
-  const [scanProgress, setScanProgress] = useState('');
-  const [scanDraftRows, setScanDraftRows] = useState<GeminiScannedStudent[]>([]);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
-  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   // 📝 NEW STATE: Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -420,82 +415,17 @@ export default function MarksheetApp() {
     await putRecord(newRecord);
     return 'inserted' as const;
   };
-
-  const handleScanClassSheet = async (e: any) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setIsScanningSheet(true);
-      setScanProgress('Uploading image to Gemini...');
-      const base64 = await fileToBase64(file);
-      const scannedRows = await extractStudentsFromClassSheet(base64, file.type || 'image/jpeg');
-      if (!scannedRows.length) {
-        alert('No students detected in scanned sheet.');
-        return;
-      }
-      setScanDraftRows(scannedRows);
-      setScanProgress(`Review ${scannedRows.length} scanned students before saving.`);
-    } catch (error: any) {
-      setScanProgress('');
-      alert(error.message || 'Failed to scan class sheet.');
-    } finally {
-      setIsScanningSheet(false);
-      if (scanInputRef.current) scanInputRef.current.value = '';
+  const handleApproveAssistantRows = async (rows: GeminiScannedStudent[]) => {
+    let updated = 0;
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += 1) {
+      const action = await upsertScannedStudent(rows[i]);
+      if (action === 'updated') updated += 1;
+      else inserted += 1;
     }
-  };
-
-  const updateScanDraftStudent = (idx: number, patch: Partial<GeminiScannedStudent>) => {
-    setScanDraftRows((prev) => prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
-  };
-
-  const updateScanDraftMark = (idx: number, subject: string, value: string) => {
-    setScanDraftRows((prev) =>
-      prev.map((row, i) =>
-        i === idx
-          ? { ...row, marks: { ...row.marks, [subject]: value } }
-          : row
-      )
-    );
-  };
-
-  const addSubjectToScannedRow = (idx: number) => {
-    const subject = window.prompt('Enter subject name');
-    if (!subject) return;
-    const normalized = subject.trim();
-    if (!normalized) return;
-    setScanDraftRows((prev) =>
-      prev.map((row, i) =>
-        i === idx && !Object.keys(row.marks).includes(normalized)
-          ? { ...row, marks: { ...row.marks, [normalized]: '' } }
-          : row
-      )
-    );
-  };
-
-  const confirmSaveScannedRows = async () => {
-    if (!scanDraftRows.length) return;
-    try {
-      setIsApplyingScan(true);
-      let updated = 0;
-      let inserted = 0;
-      for (let i = 0; i < scanDraftRows.length; i += 1) {
-        setScanProgress(`Processing student ${i + 1} of ${scanDraftRows.length}...`);
-        const action = await upsertScannedStudent(scanDraftRows[i]);
-        if (action === 'updated') updated += 1;
-        else inserted += 1;
-      }
-      await loadStudentsFromLocal();
-      void tryBackgroundDriveBackup();
-      const total = updated + inserted;
-      setScanProgress(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
-      alert(`Successfully processed ${total} students (${updated} updated, ${inserted} new).`);
-      setScanDraftRows([]);
-    } catch (error: any) {
-      alert(error.message || 'Failed to save scanned rows.');
-    } finally {
-      setIsApplyingScan(false);
-    }
+    await loadStudentsFromLocal();
+    void tryBackgroundDriveBackup();
+    return { updated, inserted };
   };
 
   const triggerSinglePrint = () => {
@@ -609,10 +539,6 @@ export default function MarksheetApp() {
 
                 <div className="flex flex-wrap gap-3 items-center justify-start">
                   <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFileImport} />
-                  <input ref={scanInputRef} type="file" accept="image/*" className="hidden" onChange={handleScanClassSheet} />
-                  <button onClick={() => scanInputRef.current?.click()} disabled={isScanningSheet} className="bg-white text-violet-700 border-2 border-violet-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-violet-50 disabled:opacity-60">
-                    {isScanningSheet ? <Loader2 className="animate-spin" size={18} /> : <ScanLine size={20} />} Scan Class Sheet
-                  </button>
                   <button onClick={() => csvInputRef.current?.click()} disabled={isImportingCsv} className="bg-white text-sky-700 border-2 border-sky-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-sky-50 disabled:opacity-60">
                     {isImportingCsv ? <Loader2 className="animate-spin" size={18} /> : <FileUp size={20} />} Import CSV
                   </button>
@@ -901,7 +827,7 @@ export default function MarksheetApp() {
           )
         })}
       </div>
-      <AiChatWidget />
+      <AIAssistantDrawer onApproveSave={handleApproveAssistantRows} />
     </>
   )
 }
