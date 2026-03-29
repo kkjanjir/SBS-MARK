@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, FileText, ChevronRight, ChevronLeft, Printer, Download, Home, Edit, CheckCircle, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, Lock, User as UserIcon, LogOut, WifiOff, Wifi, ArrowUp, ArrowDown } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 // 🚀 SUPABASE CONNECTION
@@ -8,6 +8,8 @@ const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
 const supabaseKey = 'sb_publishable_7jwgTYdDmbbCUJK52IHNMw_JoZF-OYD';
 const supabase = createClient(supabaseUrl, supabaseKey);
 const OFFLINE_MARKS_QUEUE_KEY = 'sbsOfflineMarksQueue';
+const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
+const OFFLINE_ONLY_MODE_KEY = 'sbsOfflineOnlyMode';
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -27,6 +29,17 @@ const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `$
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
+type BackupRecord = {
+  id: string;
+  student_name: string;
+  roll_no: string;
+  class_name: string;
+  student_data: any;
+  marks_data: MarksState;
+  extra_data: any;
+  source: 'cloud' | 'local';
+  created_at?: string;
+};
 
 export default function MarksheetApp() {
   // 🔒 AUTH & NETWORK STATES
@@ -58,6 +71,7 @@ export default function MarksheetApp() {
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
   const [notice, setNotice] = useState('');
+  const [offlineOnlyMode, setOfflineOnlyMode] = useState(false);
 
   // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -67,6 +81,59 @@ export default function MarksheetApp() {
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarksState>({});
+
+  const parseCsvLine = (line: string) => {
+    const out: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        out.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    out.push(current.trim());
+    return out.map(val => val.replace(/^"|"$/g, '').trim());
+  };
+
+  const moveSubject = (from: number, to: number) => {
+    if (to < 0 || to >= tempSubjects.length || from === to) return;
+    const updated = [...tempSubjects];
+    const [item] = updated.splice(from, 1);
+    updated.splice(to, 0, item);
+    setTempSubjects(updated);
+  };
+
+  const renameSubjectEverywhere = (oldName: string, newName: string) => {
+    const cleanNew = newName.trim().toUpperCase();
+    if (!cleanNew || oldName === cleanNew || marks[cleanNew]) return;
+    setMarks(prev => {
+      const copy = { ...prev };
+      const currentData = copy[oldName] || { t1: '', t2: '', t3: '' };
+      delete copy[oldName];
+      copy[cleanNew] = currentData;
+      return copy;
+    });
+    setSubjectConfig(prev => {
+      const updated = { ...prev };
+      const list = [...(updated[activeClass] || DEFAULT_SUBJECTS)];
+      const idx = list.indexOf(oldName);
+      if (idx >= 0) list[idx] = cleanNew;
+      updated[activeClass] = list;
+      localStorage.setItem('sbsSubjects', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
     const markKeys = Object.keys(mObj || {}).filter(Boolean);
@@ -134,6 +201,12 @@ export default function MarksheetApp() {
   useEffect(() => {
     const savedConfig = localStorage.getItem('sbsSubjects');
     if (savedConfig) setSubjectConfig(JSON.parse(savedConfig));
+    const savedOfflineMode = localStorage.getItem(OFFLINE_ONLY_MODE_KEY);
+    setOfflineOnlyMode(savedOfflineMode === 'true');
+    const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    if (Array.isArray(localBackups) && localBackups.length) {
+      setDbStudents(prev => [...localBackups, ...prev.filter(s => s.source !== 'local')]);
+    }
     const savedTheme = localStorage.getItem('sbsTheme') as any;
     if (savedTheme && THEMES[savedTheme]) setActiveTheme(savedTheme);
     const savedTableWatermark = localStorage.getItem('sbsTableWatermark');
@@ -149,14 +222,19 @@ export default function MarksheetApp() {
 
   // ✅ Simple, Crash-Proof Fetch Function
   const fetchStudentsFromCloud = async () => {
-    if (!session || !isOnline) { setIsLoadingList(false); return; }
+    const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    if (!session || !isOnline) {
+      setDbStudents(Array.isArray(localBackups) ? localBackups : []);
+      setIsLoadingList(false);
+      return;
+    }
     setIsLoadingList(true); // Normal loading shuru
     try {
       const { data, error } = await supabase.from('marks_records').select('*').order('created_at', { ascending: false });
       if (error) {
         console.error("Fetch Error:", error.message);
       } else if (data) {
-        setDbStudents(data);
+        setDbStudents([...(Array.isArray(localBackups) ? localBackups : []), ...data.map(d => ({ ...d, source: 'cloud' }))]);
       }
     } catch (err) {
       console.error("Unexpected fetch error:", err);
@@ -205,6 +283,15 @@ export default function MarksheetApp() {
 
   const deleteStudent = async (id: string, name: string, e: any) => {
     e.stopPropagation(); 
+    const target = dbStudents.find(s => s.id === id);
+    if (target?.source === 'local') {
+      const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+      const updated = (Array.isArray(localBackups) ? localBackups : []).filter((s: any) => s.id !== id);
+      localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(updated));
+      setDbStudents(prev => prev.filter(s => s.id !== id));
+      showNotice('Local backup record deleted.');
+      return;
+    }
     if(!isOnline) return alert("You must be online to delete records.");
     if (window.confirm(`WARNING: Are you sure you want to permanently delete the marksheet for ${name || 'Unknown'}?`)) {
       setIsLoadingList(true);
@@ -220,11 +307,47 @@ export default function MarksheetApp() {
     }
   };
 
+  const saveToLocalBackup = (payload: any, addNext: boolean) => {
+    const currentLocal = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    const localRecords: BackupRecord[] = Array.isArray(currentLocal) ? currentLocal : [];
+    const duplicate = localRecords.some(
+      s => s.class_name === activeClass && s.roll_no === student.roll && (s.student_name || '').toUpperCase() === student.name.toUpperCase() && s.id !== editingId
+    );
+    if (duplicate) {
+      alert(`Duplicate Entry: ${student.name} (Roll ${student.roll}) already exists in local backup for Class ${activeClass}.`);
+      return;
+    }
+
+    let updatedLocal = [...localRecords];
+    if (editingId) {
+      updatedLocal = updatedLocal.map(item => item.id === editingId ? { ...item, ...payload, source: 'local' } : item);
+    } else {
+      updatedLocal.unshift({
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ...payload,
+        source: 'local',
+        created_at: new Date().toISOString()
+      });
+    }
+    localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(updatedLocal));
+    setDbStudents(prev => {
+      const cloud = prev.filter((s: any) => s.source !== 'local');
+      return [...updatedLocal, ...cloud];
+    });
+    showNotice('Saved in local backup only (offline safe mode).');
+    proceedAfterSave(addNext);
+  };
+
   const saveToCloud = async (addNext: boolean = false) => {
     if (!student.name || !student.roll) { alert("Student Name and Roll No required!"); return; }
     
     let myTotal = getCalculations(marks, activeClass).grandTotal;
     const payload = { student_name: student.name, roll_no: student.roll, class_name: activeClass, student_data: { ...student, photo: studentPhoto }, marks_data: marks, extra_data: { ...extraDetails, coScholastic, total: myTotal } };
+
+    if (offlineOnlyMode) {
+      saveToLocalBackup(payload, addNext);
+      return;
+    }
 
     if (!navigator.onLine) {
       savePayloadOffline({ mode: editingId ? 'update' : 'insert', id: editingId || undefined, payload });
@@ -331,8 +454,99 @@ export default function MarksheetApp() {
     return rank > 0 ? `${rank}` : "";
   };
 
+  const handleBackupImport = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const raw = await file.text();
+      const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        alert('CSV me valid data nahi mila.');
+        return;
+      }
+
+      const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+      const rows = lines.slice(1).map(line => parseCsvLine(line));
+      const metaKeys = ['name', 'student_name', 'roll', 'roll_no', 'class', 'class_name', 'father', 'mother', 'gender', 'attendance', 'remark', 'issue_date'];
+      const subjectHeaders = headers
+        .map((h, idx) => ({ h, idx }))
+        .filter(({ h }) => !metaKeys.some(k => h.includes(k)) && !/(t1|t2|t3|term)/i.test(h))
+        .map(({ h }) => h.toUpperCase())
+        .filter(Boolean);
+      const importedSubjects = Array.from(new Set(subjectHeaders)).slice(0, 8);
+      const finalSubjects = importedSubjects.length ? importedSubjects : [...currentSubjectsList].slice(0, 8);
+
+      if (finalSubjects.length) {
+        setSubjectConfig(prev => {
+          const updated = { ...prev, [activeClass]: finalSubjects };
+          localStorage.setItem('sbsSubjects', JSON.stringify(updated));
+          return updated;
+        });
+        setTempSubjects(finalSubjects);
+      }
+
+      const newLocalRecords: BackupRecord[] = rows.map((cols, rowIndex) => {
+        const getCell = (...keys: string[]) => {
+          const idx = headers.findIndex(h => keys.some(k => h === k || h.includes(k)));
+          return idx >= 0 ? (cols[idx] || '') : '';
+        };
+        const marksData: MarksState = {};
+        finalSubjects.forEach((sub, idx) => {
+          const n1 = cols[idx * 3] || '';
+          const n2 = cols[idx * 3 + 1] || '';
+          const n3 = cols[idx * 3 + 2] || '';
+          marksData[sub] = { t1: `${Number(n1) || ''}`, t2: `${Number(n2) || ''}`, t3: `${Number(n3) || ''}` };
+        });
+        const recClass = (getCell('class_name', 'class') || activeClass).toUpperCase();
+        const recName = (getCell('student_name', 'name') || `IMPORTED ${rowIndex + 1}`).toUpperCase();
+        const recRoll = getCell('roll_no', 'roll');
+        return {
+          id: `local-import-${Date.now()}-${rowIndex}`,
+          student_name: recName,
+          roll_no: recRoll,
+          class_name: recClass,
+          student_data: {
+            name: recName,
+            roll: recRoll,
+            mother: getCell('mother'),
+            father: getCell('father'),
+            gender: (getCell('gender') || 'MALE').toUpperCase(),
+            photo: null
+          },
+          marks_data: marksData,
+          extra_data: {
+            attendance: getCell('attendance'),
+            remark: getCell('remark'),
+            issueDate: getCell('issue_date') || defaultIssue,
+            coScholastic: { sports: 'A', art: 'A', music: 'A', discipline: 'A' },
+            total: getCalculations(marksData, recClass).grandTotal
+          },
+          source: 'local',
+          created_at: new Date().toISOString()
+        };
+      });
+
+      const existing = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+      const merged = [...newLocalRecords, ...(Array.isArray(existing) ? existing : [])];
+      localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(merged));
+      setDbStudents(prev => [...merged, ...prev.filter(s => s.source !== 'local')]);
+      showNotice(`Backup imported: ${newLocalRecords.length} records (local only).`);
+      setShowSubjectModal(true);
+    } catch (err) {
+      console.error(err);
+      alert('CSV import failed. File format check karo.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const saveSubjects = () => {
-    const newConfig = { ...subjectConfig, [activeClass]: tempSubjects };
+    const cleaned = Array.from(new Set(tempSubjects.map(s => s.trim().toUpperCase()).filter(Boolean))).slice(0, 8);
+    if (!cleaned.length) {
+      alert('At least 1 subject required.');
+      return;
+    }
+    const newConfig = { ...subjectConfig, [activeClass]: cleaned };
     setSubjectConfig(newConfig);
     localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
     setShowSubjectModal(false);
@@ -490,6 +704,23 @@ export default function MarksheetApp() {
                 </div>
 
                 <div className="flex gap-2">
+                  <label className={`px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${offlineOnlyMode ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={offlineOnlyMode}
+                      onChange={(e) => {
+                        setOfflineOnlyMode(e.target.checked);
+                        localStorage.setItem(OFFLINE_ONLY_MODE_KEY, String(e.target.checked));
+                        showNotice(e.target.checked ? 'Offline-only save enabled. Supabase par save nahi hoga.' : 'Cloud save enabled.');
+                      }}
+                    />
+                    <WifiOff size={18} /> Offline Save
+                  </label>
+                  <label className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 cursor-pointer">
+                    <DownloadCloud size={18} /> Import Backup CSV
+                    <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleBackupImport} />
+                  </label>
                   <button
                     onClick={() => {
                       const nextValue = !showTableWatermark;
@@ -558,15 +789,28 @@ export default function MarksheetApp() {
                   <div className="space-y-2 mb-6 max-h-[40vh] overflow-y-auto">
                     {tempSubjects.map((sub, idx) => (
                       <div key={idx} className="flex justify-between items-center bg-gray-50 border p-3 rounded-lg">
-                        <span className="font-bold">{sub}</span>
-                        <button onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={18}/></button>
+                        <input
+                          value={sub}
+                          onChange={(e) => {
+                            const updated = [...tempSubjects];
+                            updated[idx] = e.target.value.toUpperCase();
+                            setTempSubjects(updated.slice(0, 8));
+                          }}
+                          className="font-bold bg-white border rounded px-2 py-1 flex-1 mr-2 outline-none focus:border-schoolBlue"
+                        />
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => moveSubject(idx, idx - 1)} className="text-gray-500 hover:bg-gray-200 p-1 rounded"><ArrowUp size={16}/></button>
+                          <button onClick={() => moveSubject(idx, idx + 1)} className="text-gray-500 hover:bg-gray-200 p-1 rounded"><ArrowDown size={16}/></button>
+                          <button onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={18}/></button>
+                        </div>
                       </div>
                     ))}
                   </div>
                   <div className="flex gap-2 mb-6">
                     <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
-                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput)){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
+                    <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput) && tempSubjects.length < 8){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
                   </div>
+                  <p className="text-xs text-gray-500 mb-3">Maximum 8 subjects. Order yahin se preview aur marks entry dono me same rahega.</p>
                   <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
                 </div>
               </div>
@@ -635,7 +879,11 @@ export default function MarksheetApp() {
                       </div>
                       
                       <div className="bg-blue-50/50 p-8 rounded-2xl border-2 border-blue-100 flex flex-col items-center justify-center text-center shadow-inner mb-6 transition-all duration-300">
-                        <h3 className="text-3xl font-extrabold text-gray-800 mb-6 uppercase tracking-wider">{currentSub}</h3>
+                        <input
+                          value={currentSub}
+                          onChange={(e) => renameSubjectEverywhere(currentSub, e.target.value)}
+                          className="text-2xl font-extrabold text-gray-800 mb-6 uppercase tracking-wider bg-white border-2 border-blue-100 rounded-xl px-4 py-2 text-center w-full max-w-md outline-none focus:border-schoolBlue"
+                        />
                         
                         <div className="flex items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
                           <input 
@@ -907,5 +1155,3 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     </div>
   )
 }
-
-
