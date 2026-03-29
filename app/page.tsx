@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, ArrowUp, ArrowDown, Bot, Send } from 'lucide-react';
 const LOCAL_MARKS_DB_KEY = 'sbsLocalMarksDb';
 const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -23,6 +23,7 @@ const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `$
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
+type SubjectSyncMode = 'withMarks' | 'withoutMarks';
 type BackupRecord = {
   id: string;
   student_name: string;
@@ -67,7 +68,7 @@ export default function MarksheetApp() {
   const [aiImage, setAiImage] = useState<string | null>(null);
   const [aiImageName, setAiImageName] = useState('');
   const [aiDraftRows, setAiDraftRows] = useState<AiDraftRow[]>([]);
-  const [isListening, setIsListening] = useState(false);
+  const [subjectSyncMode, setSubjectSyncMode] = useState<SubjectSyncMode>('withoutMarks');
 
   // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -548,35 +549,21 @@ export default function MarksheetApp() {
     setStep(2);
   };
 
-  const handleVoiceFill = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return alert('Voice feature browser me available nahi hai.');
-    const recognition = new SR();
-    recognition.lang = 'en-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    setIsListening(true);
-    recognition.onresult = (event: any) => {
-      const text = event.results?.[0]?.[0]?.transcript?.toUpperCase() || '';
-      const parts = text.match(/([A-Z .]+)\s+(\d{1,3})/);
-      if (!parts) return showNotice('Voice format: SUBJECT 78');
-      const sub = parts[1].trim();
-      const mark = parts[2].trim();
-      if (!marks[sub]) {
-        setSubjectConfig(prev => {
-          const existing = [...(prev[activeClass] || DEFAULT_SUBJECTS)];
-          if (!existing.includes(sub) && existing.length < 8) existing.push(sub);
-          const updated = { ...prev, [activeClass]: existing };
-          localStorage.setItem('sbsSubjects', JSON.stringify(updated));
-          return updated;
-        });
-      }
-      handleMarkChange(sub, activeTerm, mark);
-      showNotice(`Voice filled: ${sub} ${mark}`);
-    };
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
-    recognition.start();
+  const remapMarksByMode = (sourceMarks: MarksState | undefined, oldSubjects: string[], newSubjects: string[], mode: SubjectSyncMode) => {
+    const source = sourceMarks || {};
+    const fallback = { t1: '', t2: '', t3: '' };
+    const next: MarksState = {};
+    if (mode === 'withMarks') {
+      const oldSlots = oldSubjects.map(sub => source[sub] || fallback);
+      newSubjects.forEach((sub, idx) => {
+        next[sub] = oldSlots[idx] || fallback;
+      });
+      return next;
+    }
+    newSubjects.forEach(sub => {
+      next[sub] = source[sub] || fallback;
+    });
+    return next;
   };
 
   const saveSubjects = () => {
@@ -585,11 +572,36 @@ export default function MarksheetApp() {
       alert('At least 1 subject required.');
       return;
     }
+    const previousSubjects = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+
+    const remapStudentRecord = (record: any) => {
+      if ((record.class_name || '') !== activeClass) return record;
+      const nextMarks = remapMarksByMode(record.marks_data || {}, previousSubjects, cleaned, subjectSyncMode);
+      return {
+        ...record,
+        marks_data: nextMarks,
+        extra_data: {
+          ...(record.extra_data || {}),
+          total: getCalculations(nextMarks, activeClass).grandTotal
+        }
+      };
+    };
+
+    const localMain = JSON.parse(localStorage.getItem(LOCAL_MARKS_DB_KEY) || '[]');
+    const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    const updatedMain = (Array.isArray(localMain) ? localMain : []).map(remapStudentRecord);
+    const updatedBackup = (Array.isArray(localBackups) ? localBackups : []).map(remapStudentRecord);
+    localStorage.setItem(LOCAL_MARKS_DB_KEY, JSON.stringify(updatedMain));
+    localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(updatedBackup));
+
+    setDbStudents(prev => prev.map(remapStudentRecord));
+    setMarks(prev => remapMarksByMode(prev, previousSubjects, cleaned, subjectSyncMode));
+
     const newConfig = { ...subjectConfig, [activeClass]: cleaned };
     setSubjectConfig(newConfig);
     localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
     setShowSubjectModal(false);
-    resetMarks(false);
+    showNotice(`Subjects updated for Class ${activeClass}. Changes synced to all students.`);
   };
 
   const triggerSinglePrint = () => {
@@ -762,9 +774,6 @@ export default function MarksheetApp() {
                       <button onClick={handleAiChat} disabled={isAiLoading} className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
                         {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Ask AI
                       </button>
-                      <button onClick={handleVoiceFill} className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 ${isListening ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                        {isListening ? <MicOff size={16} /> : <Mic size={16} />} Voice Fill
-                      </button>
                     </div>
                     {aiReply && <div className="text-sm bg-purple-50 border border-purple-100 p-3 rounded-xl">{aiReply}</div>}
                   </div>
@@ -877,6 +886,17 @@ export default function MarksheetApp() {
                   <div className="flex gap-2 mb-6">
                     <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
                     <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput) && tempSubjects.length < 8){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
+                  </div>
+                  <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                    <p className="text-xs font-bold text-blue-800">Order apply mode (all students of this class)</p>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="radio" name="subject-sync-mode" checked={subjectSyncMode === 'withoutMarks'} onChange={() => setSubjectSyncMode('withoutMarks')} />
+                      <span><b>Without marks shift:</b> subject name same rahe to marks same subject ke saath rahenge.</span>
+                    </label>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="radio" name="subject-sync-mode" checked={subjectSyncMode === 'withMarks'} onChange={() => setSubjectSyncMode('withMarks')} />
+                      <span><b>With marks shift:</b> row position ke hisaab se marks bhi saath me shift honge.</span>
+                    </label>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">Maximum 8 subjects. Order yahin se preview aur marks entry dono me same rahega.</p>
                   <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
