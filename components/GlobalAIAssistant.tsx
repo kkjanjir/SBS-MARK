@@ -20,7 +20,9 @@ type ChatRole = 'user' | 'assistant';
 type StudentLikeRow = {
   name?: string;
   class?: string;
+  className?: string;
   roll?: string;
+  rollNo?: string;
   marks?: Record<string, string | number>;
   [key: string]: unknown;
 };
@@ -56,9 +58,9 @@ type WindowState = {
   isMaximized: boolean;
 };
 
-const DB_NAME = 'eduprime_ai_assistant_db';
+const DB_NAME = 'sbs_offline_db';
 const DB_VERSION = 1;
-const STORE = 'students';
+const STORE = 'marks_records';
 
 const SYSTEM_PROMPT = `You are EduPrime SMS Universal Gemini Manager for offline-first school ERP workflows.
 
@@ -131,9 +133,10 @@ async function getDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         const store = db.createObjectStore(STORE, { keyPath: 'id' });
-        store.createIndex('name', 'name', { unique: false });
-        store.createIndex('class', 'class', { unique: false });
-        store.createIndex('roll', 'roll', { unique: false });
+        store.createIndex('class_name', 'class_name', { unique: false });
+        store.createIndex('student_name', 'student_name', { unique: false });
+        store.createIndex('roll_no', 'roll_no', { unique: false });
+        store.createIndex('updated_at', 'updated_at', { unique: false });
       }
     };
 
@@ -158,20 +161,31 @@ async function saveRowsToDb(rows: StudentLikeRow[]): Promise<number> {
   rows.forEach((row) => {
     const now = new Date().toISOString();
     const name = String(row.name ?? 'Unknown');
-    const className = String(row.class ?? 'N/A');
-    const roll = String(row.roll ?? '');
-    const id = `${name.toLowerCase()}-${className.toLowerCase()}-${roll.toLowerCase() || 'na'}`;
+    const className = String(row.class ?? row.className ?? 'N/A');
+    const roll = String(row.roll ?? row.rollNo ?? '');
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const marks = Object.entries(row.marks ?? {}).reduce<Record<string, { t1: string; t2: string; t3: string }>>((acc, [subject, value]) => {
+      acc[subject] = { t1: String(value ?? ''), t2: '', t3: '' };
+      return acc;
+    }, {});
 
     os.put({
       id,
-      name,
-      class: className,
-      roll,
-      marks: row.marks ?? {},
-      source: 'GlobalAIAssistant',
-      raw: row,
-      updatedAt: now,
-      createdAt: now,
+      student_name: name,
+      roll_no: roll,
+      class_name: className,
+      student_data: {
+        name,
+        roll,
+        mother: '',
+        father: '',
+        gender: '',
+        photo: null,
+      },
+      marks_data: marks,
+      extra_data: { attendance: '', remark: 'Added by AI assistant' },
+      created_at: now,
+      updated_at: now,
     });
   });
 
@@ -198,8 +212,8 @@ async function executeActionCommand(command: ActionCommand): Promise<string> {
     const className = String(command.class ?? '').toLowerCase();
     const matched = rows.filter(
       (r) =>
-        (!student || String(r.name ?? '').toLowerCase().includes(student)) &&
-        (!className || String(r.class ?? '').toLowerCase() === className)
+        (!student || String(r.student_name ?? '').toLowerCase().includes(student)) &&
+        (!className || String(r.class_name ?? '').toLowerCase() === className)
     );
 
     return `Found ${matched.length} matching record(s) in local database.`;
@@ -208,8 +222,23 @@ async function executeActionCommand(command: ActionCommand): Promise<string> {
   if (action === 'DELETE') {
     const tx = db.transaction(STORE, 'readwrite');
     const os = tx.objectStore(STORE);
-    const id = `${String(command.student ?? '').toLowerCase()}-${String(command.class ?? '').toLowerCase()}-${String(command.roll ?? '').toLowerCase() || 'na'}`;
-    os.delete(id);
+    const allReq = os.getAll();
+    const rows = await new Promise<any[]>((resolve, reject) => {
+      allReq.onsuccess = () => resolve((allReq.result as any[]) ?? []);
+      allReq.onerror = () => reject(allReq.error);
+    });
+    const target = rows.find((r) => {
+      const sameName = String(r.student_name ?? '').toLowerCase() === String(command.student ?? '').toLowerCase();
+      const sameClass = command.class ? String(r.class_name ?? '').toLowerCase() === String(command.class).toLowerCase() : true;
+      const sameRoll = command.roll ? String(r.roll_no ?? '').toLowerCase() === String(command.roll).toLowerCase() : true;
+      return sameName && sameClass && sameRoll;
+    });
+    if (!target?.id) {
+      await txDone(tx);
+      db.close();
+      return 'No matching record found to delete.';
+    }
+    os.delete(target.id);
     await txDone(tx);
     db.close();
     return 'Delete command executed in local IndexedDB.';
@@ -219,33 +248,42 @@ async function executeActionCommand(command: ActionCommand): Promise<string> {
     const name = String(command.student ?? command.payload?.name ?? 'Unknown');
     const className = String(command.class ?? command.payload?.class ?? 'N/A');
     const roll = String(command.roll ?? command.payload?.roll ?? '');
-    const id = `${name.toLowerCase()}-${className.toLowerCase()}-${roll.toLowerCase() || 'na'}`;
-
     const tx = db.transaction(STORE, 'readwrite');
     const os = tx.objectStore(STORE);
 
-    const currentReq = os.get(id);
-    const existing = await new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
-      currentReq.onsuccess = () => resolve(currentReq.result as Record<string, unknown> | undefined);
-      currentReq.onerror = () => reject(currentReq.error);
+    const allReq = os.getAll();
+    const rows = await new Promise<any[]>((resolve, reject) => {
+      allReq.onsuccess = () => resolve((allReq.result as any[]) ?? []);
+      allReq.onerror = () => reject(allReq.error);
     });
+    const existing = rows.find((r) => {
+      const sameName = String(r.student_name ?? '').toLowerCase() === name.toLowerCase();
+      const sameClass = String(r.class_name ?? '').toLowerCase() === className.toLowerCase();
+      const sameRoll = roll ? String(r.roll_no ?? '').toLowerCase() === roll.toLowerCase() : true;
+      return sameName && sameClass && sameRoll;
+    }) as Record<string, unknown> | undefined;
+    const id = String(existing?.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     const record = {
       id,
-      name,
-      class: className,
-      roll,
-      marks: (existing?.marks as Record<string, unknown>) ?? {},
       ...(existing ?? {}),
+      student_name: name,
+      class_name: className,
+      roll_no: roll,
       ...(command.payload ?? {}),
-      updatedAt: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_at: String(existing?.created_at ?? new Date().toISOString()),
+      marks_data: (existing?.marks_data as Record<string, { t1: string; t2: string; t3: string }>) ?? {},
     } as Record<string, unknown>;
 
     if (command.updates && typeof command.updates === 'object') {
       Object.entries(command.updates).forEach(([k, v]) => {
         if (k.startsWith('marks.')) {
           const key = k.replace('marks.', '');
-          record.marks = { ...(record.marks as Record<string, unknown>), [key]: v };
+          const marksData = (record.marks_data as Record<string, { t1: string; t2: string; t3: string }>) ?? {};
+          const existingMark = marksData[key] ?? { t1: '', t2: '', t3: '' };
+          marksData[key] = { ...existingMark, t1: String(v ?? '') };
+          record.marks_data = marksData;
         } else {
           record[k] = v;
         }
@@ -275,6 +313,11 @@ export default function GlobalAIAssistant() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
   const [busyActionId, setBusyActionId] = useState<string | null>(null);
+  const quickPrompts = [
+    'Show class 10A topper summary from existing records',
+    'Update Rahul class 10A Math marks to 95',
+    'Find student by name and class from local database',
+  ];
 
   const fileRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -486,6 +529,18 @@ export default function GlobalAIAssistant() {
           </div>
 
           <footer className="border-t border-slate-200 bg-white p-3">
+            <div className="mb-2 flex flex-wrap gap-2">
+              {quickPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => setInput(prompt)}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 hover:border-indigo-300 hover:text-indigo-700"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+
             {imagePreview && (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
                 <img src={imagePreview} alt="selected" className="h-14 w-14 rounded-md border object-cover" />
@@ -519,7 +574,7 @@ export default function GlobalAIAssistant() {
                 }}
               />
 
-              <input
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -529,7 +584,7 @@ export default function GlobalAIAssistant() {
                   }
                 }}
                 placeholder="Ask anything, extract marks, or request record updates..."
-                className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-indigo-500"
+                className="min-h-[40px] max-h-28 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
               />
 
               <button
