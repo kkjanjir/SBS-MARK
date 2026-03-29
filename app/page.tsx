@@ -559,7 +559,7 @@ export default function MarksheetApp() {
                   <div>
                     {/* Added dots S.B.S. */}
                     <h1 className="text-3xl md:text-4xl font-extrabold text-schoolRed tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>S.B.S. Shiksha Niketan</h1>
-                    <p className="text-gray-600 font-bold tracking-wide mt-1">EduPrime SMS <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
+                    <p className="text-gray-600 font-bold tracking-wide mt-1">Dev By AKASH <span className="text-schoolBlue ml-2 px-2 py-0.5 bg-blue-100 rounded text-xs font-bold">Admin Portal</span></p>
                   </div>
                 </div>
                 <button onClick={handleLogout} className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100">
