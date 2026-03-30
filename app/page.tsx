@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react';
-import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
+import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, ArrowUp, ArrowDown, Bot, Send } from 'lucide-react';
 const LOCAL_MARKS_DB_KEY = 'sbsLocalMarksDb';
 const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -23,6 +23,7 @@ const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `$
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
+type SubjectSyncMode = 'withMarks' | 'withoutMarks';
 type BackupRecord = {
   id: string;
   student_name: string;
@@ -64,10 +65,11 @@ export default function MarksheetApp() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiReply, setAiReply] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [showAiDock, setShowAiDock] = useState(false);
   const [aiImage, setAiImage] = useState<string | null>(null);
   const [aiImageName, setAiImageName] = useState('');
   const [aiDraftRows, setAiDraftRows] = useState<AiDraftRow[]>([]);
-  const [isListening, setIsListening] = useState(false);
+  const [subjectSyncMode, setSubjectSyncMode] = useState<SubjectSyncMode>('withoutMarks');
 
   // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
@@ -361,14 +363,71 @@ export default function MarksheetApp() {
 
       const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
       const rows = lines.slice(1).map(line => parseCsvLine(line));
-      const metaKeys = ['name', 'student_name', 'roll', 'roll_no', 'class', 'class_name', 'father', 'mother', 'gender', 'attendance', 'remark', 'issue_date'];
-      const subjectHeaders = headers
-        .map((h, idx) => ({ h, idx }))
-        .filter(({ h }) => !metaKeys.some(k => h.includes(k)) && !/(t1|t2|t3|term)/i.test(h))
-        .map(({ h }) => h.toUpperCase())
-        .filter(Boolean);
-      const importedSubjects = Array.from(new Set(subjectHeaders)).slice(0, 8);
-      const finalSubjects = importedSubjects.length ? importedSubjects : [...currentSubjectsList].slice(0, 8);
+      const subjectAlias: Record<string, string> = {
+        HINDI: 'HINDI',
+        ENGLISH: 'ENGLISH',
+        MATH: 'MATHEMATICS',
+        MATHS: 'MATHEMATICS',
+        MATHEMATICS: 'MATHEMATICS',
+        SCIENCE: 'SCIENCE',
+        SOCIALSCIENCE: 'SOCIAL SCIENCE',
+        SOCIAL_SCIENCE: 'SOCIAL SCIENCE',
+        'SOCIAL SCIENCE': 'SOCIAL SCIENCE',
+        SST: 'SOCIAL SCIENCE',
+        ART: 'ART AND DRAWING',
+        DRAWING: 'ART AND DRAWING',
+        ARTANDDRAWING: 'ART AND DRAWING',
+        ART_AND_DRAWING: 'ART AND DRAWING',
+        GK: 'G.K.',
+        G_K: 'G.K.',
+        'G.K': 'G.K.',
+        'G.K.': 'G.K.'
+      };
+      const normalizeSubjectName = (raw: string) => {
+        const clean = (raw || '').toUpperCase().replace(/[^\w\s.]/g, '').replace(/\s+/g, ' ').trim();
+        const key = clean.replace(/\s+/g, '').replace(/\./g, '');
+        return subjectAlias[clean] || subjectAlias[key] || clean;
+      };
+      const isMetaHeader = (h: string) => /(^id$|created_at|updated_at|student_data|marks_data|extra_data|student_name|roll_no|class_name|mother|father|gender|attendance|remark|issue_date|name|class|roll)/i.test(h);
+      const marksDataHeaderIndex = headers.findIndex(h => /marks_data|marksdata/.test(h));
+      const termColumnMap: Record<string, { t1?: number; t2?: number; t3?: number }> = {};
+      headers.forEach((h, idx) => {
+        const matched = h.match(/(.+?)[\s_-]*(t1|t2|t3|term1|term2|term3)$/i);
+        if (!matched) return;
+        const normalizedSub = normalizeSubjectName(matched[1]);
+        const termRaw = matched[2].toLowerCase();
+        const term = termRaw === 'term1' ? 't1' : termRaw === 'term2' ? 't2' : termRaw === 'term3' ? 't3' : termRaw;
+        if (!termColumnMap[normalizedSub]) termColumnMap[normalizedSub] = {};
+        (termColumnMap[normalizedSub] as any)[term] = idx;
+      });
+
+      const subjectsFromMarksData = new Set<string>();
+      if (marksDataHeaderIndex >= 0) {
+        rows.forEach(cols => {
+          const rawJson = cols[marksDataHeaderIndex];
+          if (!rawJson) return;
+          try {
+            const parsed = JSON.parse(rawJson);
+            Object.keys(parsed || {}).forEach(sub => {
+              const normalized = normalizeSubjectName(sub);
+              if (normalized) subjectsFromMarksData.add(normalized);
+            });
+          } catch {
+            // ignore broken json row
+          }
+        });
+      }
+      const subjectsFromTermColumns = Object.keys(termColumnMap).map(normalizeSubjectName).filter(Boolean);
+      const preferredSubjects = (subjectConfig[activeClass] && subjectConfig[activeClass].length > 0)
+        ? subjectConfig[activeClass]
+        : DEFAULT_SUBJECTS;
+      const mergedDetected = Array.from(new Set([
+        ...preferredSubjects.map(normalizeSubjectName),
+        ...Array.from(subjectsFromMarksData),
+        ...subjectsFromTermColumns,
+        ...headers.filter(h => !isMetaHeader(h) && /^[A-Za-z .]{2,}$/.test(h)).map(normalizeSubjectName)
+      ])).filter(Boolean).slice(0, 8);
+      const finalSubjects = mergedDetected.length ? mergedDetected : [...DEFAULT_SUBJECTS].slice(0, 8);
 
       if (finalSubjects.length) {
         setSubjectConfig(prev => {
@@ -385,11 +444,40 @@ export default function MarksheetApp() {
           return idx >= 0 ? (cols[idx] || '') : '';
         };
         const marksData: MarksState = {};
-        finalSubjects.forEach((sub, idx) => {
-          const n1 = cols[idx * 3] || '';
-          const n2 = cols[idx * 3 + 1] || '';
-          const n3 = cols[idx * 3 + 2] || '';
-          marksData[sub] = { t1: `${Number(n1) || ''}`, t2: `${Number(n2) || ''}`, t3: `${Number(n3) || ''}` };
+        finalSubjects.forEach(sub => {
+          marksData[sub] = { t1: '', t2: '', t3: '' };
+        });
+
+        if (marksDataHeaderIndex >= 0) {
+          const rawJson = cols[marksDataHeaderIndex];
+          if (rawJson) {
+            try {
+              const parsed = JSON.parse(rawJson);
+              Object.entries(parsed || {}).forEach(([rawSub, val]: any) => {
+                const sub = normalizeSubjectName(rawSub);
+                if (!sub || !marksData[sub]) return;
+                marksData[sub] = {
+                  t1: `${val?.t1 ?? ''}`,
+                  t2: `${val?.t2 ?? ''}`,
+                  t3: `${val?.t3 ?? ''}`
+                };
+              });
+            } catch {
+              // ignore row if marks_data is not parseable json
+            }
+          }
+        }
+
+        finalSubjects.forEach(sub => {
+          const termIndexes = termColumnMap[sub] || {};
+          const n1 = termIndexes.t1 !== undefined ? cols[termIndexes.t1] : marksData[sub].t1;
+          const n2 = termIndexes.t2 !== undefined ? cols[termIndexes.t2] : marksData[sub].t2;
+          const n3 = termIndexes.t3 !== undefined ? cols[termIndexes.t3] : marksData[sub].t3;
+          marksData[sub] = {
+            t1: `${Number(n1) || n1 || ''}`,
+            t2: `${Number(n2) || n2 || ''}`,
+            t3: `${Number(n3) || n3 || ''}`
+          };
         });
         const recClass = (getCell('class_name', 'class') || activeClass).toUpperCase();
         const recName = (getCell('student_name', 'name') || `IMPORTED ${rowIndex + 1}`).toUpperCase();
@@ -548,35 +636,21 @@ export default function MarksheetApp() {
     setStep(2);
   };
 
-  const handleVoiceFill = () => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return alert('Voice feature browser me available nahi hai.');
-    const recognition = new SR();
-    recognition.lang = 'en-IN';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    setIsListening(true);
-    recognition.onresult = (event: any) => {
-      const text = event.results?.[0]?.[0]?.transcript?.toUpperCase() || '';
-      const parts = text.match(/([A-Z .]+)\s+(\d{1,3})/);
-      if (!parts) return showNotice('Voice format: SUBJECT 78');
-      const sub = parts[1].trim();
-      const mark = parts[2].trim();
-      if (!marks[sub]) {
-        setSubjectConfig(prev => {
-          const existing = [...(prev[activeClass] || DEFAULT_SUBJECTS)];
-          if (!existing.includes(sub) && existing.length < 8) existing.push(sub);
-          const updated = { ...prev, [activeClass]: existing };
-          localStorage.setItem('sbsSubjects', JSON.stringify(updated));
-          return updated;
-        });
-      }
-      handleMarkChange(sub, activeTerm, mark);
-      showNotice(`Voice filled: ${sub} ${mark}`);
-    };
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
-    recognition.start();
+  const remapMarksByMode = (sourceMarks: MarksState | undefined, oldSubjects: string[], newSubjects: string[], mode: SubjectSyncMode) => {
+    const source = sourceMarks || {};
+    const fallback = { t1: '', t2: '', t3: '' };
+    const next: MarksState = {};
+    if (mode === 'withMarks') {
+      const oldSlots = oldSubjects.map(sub => source[sub] || fallback);
+      newSubjects.forEach((sub, idx) => {
+        next[sub] = oldSlots[idx] || fallback;
+      });
+      return next;
+    }
+    newSubjects.forEach(sub => {
+      next[sub] = source[sub] || fallback;
+    });
+    return next;
   };
 
   const saveSubjects = () => {
@@ -585,11 +659,36 @@ export default function MarksheetApp() {
       alert('At least 1 subject required.');
       return;
     }
+    const previousSubjects = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
+
+    const remapStudentRecord = (record: any) => {
+      if ((record.class_name || '') !== activeClass) return record;
+      const nextMarks = remapMarksByMode(record.marks_data || {}, previousSubjects, cleaned, subjectSyncMode);
+      return {
+        ...record,
+        marks_data: nextMarks,
+        extra_data: {
+          ...(record.extra_data || {}),
+          total: getCalculations(nextMarks, activeClass).grandTotal
+        }
+      };
+    };
+
+    const localMain = JSON.parse(localStorage.getItem(LOCAL_MARKS_DB_KEY) || '[]');
+    const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    const updatedMain = (Array.isArray(localMain) ? localMain : []).map(remapStudentRecord);
+    const updatedBackup = (Array.isArray(localBackups) ? localBackups : []).map(remapStudentRecord);
+    localStorage.setItem(LOCAL_MARKS_DB_KEY, JSON.stringify(updatedMain));
+    localStorage.setItem(LOCAL_BACKUP_RECORDS_KEY, JSON.stringify(updatedBackup));
+
+    setDbStudents(prev => prev.map(remapStudentRecord));
+    setMarks(prev => remapMarksByMode(prev, previousSubjects, cleaned, subjectSyncMode));
+
     const newConfig = { ...subjectConfig, [activeClass]: cleaned };
     setSubjectConfig(newConfig);
     localStorage.setItem('sbsSubjects', JSON.stringify(newConfig));
     setShowSubjectModal(false);
-    resetMarks(false);
+    showNotice(`Subjects updated for Class ${activeClass}. Changes synced to all students.`);
   };
 
   const triggerSinglePrint = () => {
@@ -607,6 +706,71 @@ export default function MarksheetApp() {
     window.print();
     setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
+
+  const renderAiAssistantPanel = (mode: 'inline' | 'modal' = 'inline') => (
+    <div className={`${mode === 'inline' ? 'bg-white rounded-2xl border border-purple-100 shadow-sm p-4 mb-6' : 'bg-white rounded-2xl border border-purple-100 shadow-sm p-4'}`}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Bot size={18} className="text-purple-600" />
+          <h3 className="font-bold text-purple-700">Gemini 2.5 Flash Assistant</h3>
+        </div>
+        {mode === 'modal' && (
+          <button onClick={() => setShowAiDock(false)} className="text-gray-500 hover:text-red-500"><X size={20}/></button>
+        )}
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="AI se bolo: class 5 ka summary do, ya marks clean karo..." className="w-full border-2 border-gray-200 rounded-xl p-3 min-h-[100px] outline-none focus:border-purple-400" />
+          <div className="flex gap-2">
+            <button onClick={handleAiChat} disabled={isAiLoading} className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
+              {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Ask AI
+            </button>
+          </div>
+          {aiReply && <div className="text-sm bg-purple-50 border border-purple-100 p-3 rounded-xl">{aiReply}</div>}
+        </div>
+        <div className="space-y-2">
+          <label className="w-full border-2 border-dashed border-gray-300 rounded-xl px-3 py-5 text-center font-semibold text-gray-600 cursor-pointer block hover:border-purple-400">
+            {aiImageName ? `Image selected: ${aiImageName}` : 'Upload Marksheet Image for AI Scan'}
+            <input type="file" accept="image/*" className="hidden" onChange={handleAiImageUpload} />
+          </label>
+          <button onClick={scanImageToDraft} disabled={isAiLoading || !aiImage} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">Scan to Table Preview</button>
+        </div>
+      </div>
+      {!!aiDraftRows.length && (
+        <div className="mt-4 overflow-auto max-h-[280px]">
+          <table className="w-full text-xs border">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="border p-2">Name</th>
+                <th className="border p-2">Roll</th>
+                <th className="border p-2">Subjects JSON (editable)</th>
+                <th className="border p-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {aiDraftRows.map((row, idx) => (
+                <tr key={idx}>
+                  <td className="border p-1"><input value={row.student_name || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, student_name: e.target.value.toUpperCase() } : r))} className="w-full p-1 border rounded" /></td>
+                  <td className="border p-1"><input value={row.roll_no || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, roll_no: e.target.value } : r))} className="w-full p-1 border rounded" /></td>
+                  <td className="border p-1">
+                    <textarea value={JSON.stringify(row.subjects || {}, null, 0)} onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value || '{}');
+                        setAiDraftRows(prev => prev.map((r, i) => i===idx ? { ...r, subjects: parsed } : r));
+                      } catch {}
+                    }} className="w-full p-1 border rounded min-h-[70px]" />
+                  </td>
+                  <td className="border p-1">
+                    <button onClick={() => applyAiDraftRow(idx)} className="px-3 py-1 bg-schoolBlue text-white rounded font-bold">Apply + Preview</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 
   const activeTerm: 't1' | 't2' | 't3' = step === 2 ? 't1' : step === 3 ? 't2' : 't3';
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
@@ -750,66 +914,7 @@ export default function MarksheetApp() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-purple-100 shadow-sm p-4 mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <Bot size={18} className="text-purple-600" />
-                  <h3 className="font-bold text-purple-700">Gemini 2.5 Flash Assistant</h3>
-                </div>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder="AI se bolo: class 5 ka summary do, ya marks clean karo..." className="w-full border-2 border-gray-200 rounded-xl p-3 min-h-[100px] outline-none focus:border-purple-400" />
-                    <div className="flex gap-2">
-                      <button onClick={handleAiChat} disabled={isAiLoading} className="px-4 py-2 bg-purple-600 text-white rounded-xl font-bold flex items-center gap-2 disabled:opacity-50">
-                        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Ask AI
-                      </button>
-                      <button onClick={handleVoiceFill} className={`px-4 py-2 rounded-xl font-bold flex items-center gap-2 ${isListening ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                        {isListening ? <MicOff size={16} /> : <Mic size={16} />} Voice Fill
-                      </button>
-                    </div>
-                    {aiReply && <div className="text-sm bg-purple-50 border border-purple-100 p-3 rounded-xl">{aiReply}</div>}
-                  </div>
-                  <div className="space-y-2">
-                    <label className="w-full border-2 border-dashed border-gray-300 rounded-xl px-3 py-5 text-center font-semibold text-gray-600 cursor-pointer block hover:border-purple-400">
-                      {aiImageName ? `Image selected: ${aiImageName}` : 'Upload Marksheet Image for AI Scan'}
-                      <input type="file" accept="image/*" className="hidden" onChange={handleAiImageUpload} />
-                    </label>
-                    <button onClick={scanImageToDraft} disabled={isAiLoading || !aiImage} className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">Scan to Table Preview</button>
-                  </div>
-                </div>
-                {!!aiDraftRows.length && (
-                  <div className="mt-4 overflow-auto">
-                    <table className="w-full text-xs border">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="border p-2">Name</th>
-                          <th className="border p-2">Roll</th>
-                          <th className="border p-2">Subjects JSON (editable)</th>
-                          <th className="border p-2">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {aiDraftRows.map((row, idx) => (
-                          <tr key={idx}>
-                            <td className="border p-1"><input value={row.student_name || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, student_name: e.target.value.toUpperCase() } : r))} className="w-full p-1 border rounded" /></td>
-                            <td className="border p-1"><input value={row.roll_no || ''} onChange={(e) => setAiDraftRows(prev => prev.map((r,i) => i===idx ? { ...r, roll_no: e.target.value } : r))} className="w-full p-1 border rounded" /></td>
-                            <td className="border p-1">
-                              <textarea value={JSON.stringify(row.subjects || {}, null, 0)} onChange={(e) => {
-                                try {
-                                  const parsed = JSON.parse(e.target.value || '{}');
-                                  setAiDraftRows(prev => prev.map((r, i) => i===idx ? { ...r, subjects: parsed } : r));
-                                } catch {}
-                              }} className="w-full p-1 border rounded min-h-[70px]" />
-                            </td>
-                            <td className="border p-1">
-                              <button onClick={() => applyAiDraftRow(idx)} className="px-3 py-1 bg-schoolBlue text-white rounded font-bold">Apply + Preview</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              {renderAiAssistantPanel('inline')}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b bg-gray-50/50 flex justify-between items-center">
@@ -877,6 +982,17 @@ export default function MarksheetApp() {
                   <div className="flex gap-2 mb-6">
                     <input type="text" value={newSubInput} onChange={e=>setNewSubInput(e.target.value.toUpperCase())} placeholder="New Subject Name" className="flex-1 border-2 border-gray-200 p-3 rounded-xl outline-none focus:border-schoolBlue" />
                     <button onClick={() => { if(newSubInput && !tempSubjects.includes(newSubInput) && tempSubjects.length < 8){ setTempSubjects([...tempSubjects, newSubInput]); setNewSubInput(''); } }} className="bg-gray-800 text-white px-6 font-bold rounded-xl active:scale-95">Add</button>
+                  </div>
+                  <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+                    <p className="text-xs font-bold text-blue-800">Order apply mode (all students of this class)</p>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="radio" name="subject-sync-mode" checked={subjectSyncMode === 'withoutMarks'} onChange={() => setSubjectSyncMode('withoutMarks')} />
+                      <span><b>Without marks shift:</b> subject name same rahe to marks same subject ke saath rahenge.</span>
+                    </label>
+                    <label className="flex items-start gap-2 text-xs text-gray-700">
+                      <input type="radio" name="subject-sync-mode" checked={subjectSyncMode === 'withMarks'} onChange={() => setSubjectSyncMode('withMarks')} />
+                      <span><b>With marks shift:</b> row position ke hisaab se marks bhi saath me shift honge.</span>
+                    </label>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">Maximum 8 subjects. Order yahin se preview aur marks entry dono me same rahega.</p>
                   <button onClick={saveSubjects} className="w-full bg-schoolBlue text-white py-4 rounded-xl font-bold hover:bg-blue-800 active:scale-95 transition-all">Save Subject List</button>
@@ -1043,6 +1159,22 @@ export default function MarksheetApp() {
                   <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowAiDock(true)}
+          className="fixed bottom-5 right-5 z-40 bg-purple-700 text-white p-4 rounded-full shadow-2xl hover:bg-purple-800 active:scale-95 transition-all"
+          title="Open AI Assistant"
+        >
+          <Bot size={22} />
+        </button>
+
+        {showAiDock && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 sm:p-6">
+            <div className="w-full max-w-4xl max-h-[90vh] overflow-auto">
+              {renderAiAssistantPanel('modal')}
             </div>
           </div>
         )}
