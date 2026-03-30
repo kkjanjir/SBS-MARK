@@ -6,7 +6,7 @@ const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ❌ Computer removed from default subjects
-const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
+const DEFAULT_SUBJECTS = ['HINDI', 'MATH', 'SCIENCE', 'ENGLISH', 'SOCIAL SCIENCE', 'GENERAL KNOWLEDGE', 'DRAWING', 'EXERCISE'];
 const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
 
 // 🎨 5 PREMIUM THEMES
@@ -69,13 +69,13 @@ export default function MarksheetApp() {
   const [aiImage, setAiImage] = useState<string | null>(null);
   const [aiImageName, setAiImageName] = useState('');
   const [aiDraftRows, setAiDraftRows] = useState<AiDraftRow[]>([]);
-  const [subjectSyncMode, setSubjectSyncMode] = useState<SubjectSyncMode>('withoutMarks');
+  const [subjectSyncMode, setSubjectSyncMode] = useState<SubjectSyncMode>('withMarks');
 
   // 📝 Single Subject Entry Tracker
   const [activeSubjectIdx, setActiveSubjectIdx] = useState(0);
 
   const [student, setStudent] = useState({ name: "", roll: "", mother: "", father: "", gender: "MALE" });
-  const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue });
+  const [extraDetails, setExtraDetails] = useState({ attendance: "", remark: "", issueDate: defaultIssue, classRank: "" });
   const [coScholastic, setCoScholastic] = useState<CoScholasticState>({ sports: "A", art: "A", music: "A", discipline: "A" });
   const [studentPhoto, setStudentPhoto] = useState<string | null>(null);
   const [marks, setMarks] = useState<MarksState>({});
@@ -262,7 +262,7 @@ export default function MarksheetApp() {
     localStorage.setItem(LOCAL_MARKS_DB_KEY, JSON.stringify(updatedLocal));
     const backups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
     setDbStudents([...updatedLocal, ...(Array.isArray(backups) ? backups : [])]);
-    showNotice('Saved in local database.');
+    showNotice('Saved offline in local database.');
     proceedAfterSave(addNext);
   };
 
@@ -302,7 +302,7 @@ export default function MarksheetApp() {
     const subList = subjectConfig[activeClass] || DEFAULT_SUBJECTS;
     subList.forEach(sub => { initial[sub] = { t1: '', t2: '', t3: '' }; });
     setMarks(initial);
-    setExtraDetails(prev => ({ attendance: preserveAttendance ? prev.attendance : "", remark: "", issueDate: defaultIssue }));
+    setExtraDetails(prev => ({ attendance: preserveAttendance ? prev.attendance : "", remark: "", issueDate: defaultIssue, classRank: preserveAttendance ? prev.classRank : "" }));
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
     setActiveSubjectIdx(0);
@@ -366,22 +366,26 @@ export default function MarksheetApp() {
       const subjectAlias: Record<string, string> = {
         HINDI: 'HINDI',
         ENGLISH: 'ENGLISH',
-        MATH: 'MATHEMATICS',
-        MATHS: 'MATHEMATICS',
-        MATHEMATICS: 'MATHEMATICS',
+        MATH: 'MATH',
+        MATHS: 'MATH',
+        MATHEMATICS: 'MATH',
         SCIENCE: 'SCIENCE',
         SOCIALSCIENCE: 'SOCIAL SCIENCE',
         SOCIAL_SCIENCE: 'SOCIAL SCIENCE',
         'SOCIAL SCIENCE': 'SOCIAL SCIENCE',
         SST: 'SOCIAL SCIENCE',
-        ART: 'ART AND DRAWING',
-        DRAWING: 'ART AND DRAWING',
-        ARTANDDRAWING: 'ART AND DRAWING',
-        ART_AND_DRAWING: 'ART AND DRAWING',
-        GK: 'G.K.',
-        G_K: 'G.K.',
-        'G.K': 'G.K.',
-        'G.K.': 'G.K.'
+        ART: 'DRAWING',
+        DRAWING: 'DRAWING',
+        ARTANDDRAWING: 'DRAWING',
+        ART_AND_DRAWING: 'DRAWING',
+        EXERCISE: 'EXERCISE',
+        PT: 'EXERCISE',
+        GAMES: 'EXERCISE',
+        GK: 'GENERAL KNOWLEDGE',
+        G_K: 'GENERAL KNOWLEDGE',
+        'G.K': 'GENERAL KNOWLEDGE',
+        'G.K.': 'GENERAL KNOWLEDGE',
+        GENERALKNOWLEDGE: 'GENERAL KNOWLEDGE'
       };
       const normalizeSubjectName = (raw: string) => {
         const clean = (raw || '').toUpperCase().replace(/[^\w\s.]/g, '').replace(/\s+/g, ' ').trim();
@@ -500,6 +504,7 @@ export default function MarksheetApp() {
             attendance: getCell('attendance'),
             remark: getCell('remark'),
             issueDate: getCell('issue_date') || defaultIssue,
+            classRank: '',
             coScholastic: { sports: 'A', art: 'A', music: 'A', discipline: 'A' },
             total: getCalculations(marksData, recClass).grandTotal
           },
@@ -986,7 +991,7 @@ export default function MarksheetApp() {
                         setEditingId(s.id); 
                         setStudent(s.student_data || { name: s.student_name || "", roll: s.roll_no || "", mother: "", father: "", gender: "MALE" }); 
                         setMarks(s.marks_data || {}); 
-                        setExtraDetails(s.extra_data || extraDetails); 
+                        setExtraDetails({ attendance: "", remark: "", issueDate: defaultIssue, classRank: "", ...(s.extra_data || {}) }); 
                         setCoScholastic(s.extra_data?.coScholastic || coScholastic); 
                         setStudentPhoto(s.student_data?.photo || null); 
                         setView('editor');
@@ -1182,6 +1187,7 @@ export default function MarksheetApp() {
                       <div className="grid grid-cols-2 gap-3">
                         <div><label className="text-xs font-bold text-gray-500">ATTENDANCE</label><input type="text" value={extraDetails.attendance} onChange={(e)=>setExtraDetails({...extraDetails, attendance: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" /></div>
                         <div><label className="text-xs font-bold text-gray-500">ISSUE DATE</label><input type="date" value={extraDetails.issueDate} onChange={(e)=>setExtraDetails({...extraDetails, issueDate: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" /></div>
+                        <div><label className="text-xs font-bold text-gray-500">CLASS RANK (EDITABLE)</label><input type="text" value={extraDetails.classRank} onChange={(e)=>setExtraDetails({...extraDetails, classRank: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" /></div>
                         <div className="col-span-2">
                           <label className="text-xs font-bold text-gray-500">REMARKS</label>
                           <input list="remarks-list" type="text" value={extraDetails.remark} onChange={(e)=>setExtraDetails({...extraDetails, remark: e.target.value})} className="w-full border-2 border-gray-200 p-2 rounded-xl outline-none font-bold focus:border-schoolBlue transition-all" />
@@ -1388,7 +1394,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
             <div className={`flex justify-between text-[11px] font-bold mt-5 ${t.textSecondary}`}>
               <div>Remark : <span className={`border-b border-black inline-block min-w-[200px] ${t.text} uppercase px-2`}>{extra?.remark || ''}</span></div>
               <div>Attendance : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2`}>{extra?.attendance || ''}</span></div>
-              <div>Class Rank : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2 text-sm`}>{rank}</span></div>
+              <div>Class Rank : <span className={`border-b border-black inline-block min-w-[60px] text-center ${t.text} px-2 text-sm`}>{extra?.classRank || rank}</span></div>
             </div>
           </div>
 
