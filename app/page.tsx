@@ -938,15 +938,15 @@ export default function MarksheetApp() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <label className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 cursor-pointer">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                  <label className="w-full sm:w-auto bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 cursor-pointer">
                     <DownloadCloud size={18} /> Import Backup CSV
                     <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleBackupImport} />
                   </label>
-                  <button onClick={() => exportLocalBackup('json')} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
+                  <button onClick={() => exportLocalBackup('json')} className="w-full sm:w-auto bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
                     <DownloadCloud size={18} /> Backup JSON
                   </button>
-                  <button onClick={() => exportLocalBackup('csv')} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
+                  <button onClick={() => exportLocalBackup('csv')} className="w-full sm:w-auto bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
                     <DownloadCloud size={18} /> Backup CSV
                   </button>
                   <button
@@ -955,17 +955,17 @@ export default function MarksheetApp() {
                       setShowTableWatermark(nextValue);
                       localStorage.setItem('sbsTableWatermark', String(nextValue));
                     }}
-                    className={`px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all ${showTableWatermark ? 'bg-schoolBlue text-white border-schoolBlue' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+                    className={`w-full sm:w-auto px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 border-2 transition-all ${showTableWatermark ? 'bg-schoolBlue text-white border-schoolBlue' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
                   >
                     <Palette size={18} /> Table Logo
                   </button>
-                  <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 flex-1 sm:flex-none">
+                  <button onClick={() => { setTempSubjects([...currentSubjectsList]); setShowSubjectModal(true); }} className="w-full sm:w-auto bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
                     <Settings size={20} /> Subjects
                   </button>
-                  <button onClick={triggerBulkPrint} className="bg-gray-800 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-gray-900 flex-1 sm:flex-none active:scale-95 transition-all">
+                  <button onClick={triggerBulkPrint} className="w-full sm:w-auto bg-gray-800 text-white px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-gray-900 active:scale-95 transition-all">
                     <Printer size={20} /> Bulk Print
                   </button>
-                  <button onClick={() => { resetMarks(false); setStep(1); setView('editor'); }} className="bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 flex-1 sm:flex-none active:scale-95 transition-all">
+                  <button onClick={() => { resetMarks(false); setStep(1); setView('editor'); }} className="w-full sm:w-auto bg-schoolBlue text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-blue-800 active:scale-95 transition-all">
                     <Plus size={20} /> Add
                   </button>
                 </div>
