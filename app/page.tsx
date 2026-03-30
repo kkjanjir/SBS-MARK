@@ -707,6 +707,57 @@ export default function MarksheetApp() {
     setTimeout(() => { document.body.classList.remove('printing-bulk'); }, 1000);
   };
 
+  const exportLocalBackup = (format: 'json' | 'csv' = 'json') => {
+    const localMain = JSON.parse(localStorage.getItem(LOCAL_MARKS_DB_KEY) || '[]');
+    const localBackups = JSON.parse(localStorage.getItem(LOCAL_BACKUP_RECORDS_KEY) || '[]');
+    const combined = [...(Array.isArray(localMain) ? localMain : []), ...(Array.isArray(localBackups) ? localBackups : [])];
+    const uniqueRecords = Array.from(new Map(combined.map((item: any) => [item.id, item])).values());
+    if (!uniqueRecords.length) {
+      alert('Backup ke liye local data nahi mila.');
+      return;
+    }
+
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(uniqueRecords, null, 2)], { type: 'application/json;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `sbs_local_backup_${stamp}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showNotice(`JSON backup downloaded (${uniqueRecords.length} records).`);
+      return;
+    }
+
+    const csvHeaders = [
+      'student_name', 'roll_no', 'class_name', 'mother', 'father', 'gender', 'attendance', 'remark', 'issue_date', 'marks_data'
+    ];
+    const esc = (val: any) => {
+      const text = `${val ?? ''}`.replace(/"/g, '""');
+      return `"${text}"`;
+    };
+    const csvRows = uniqueRecords.map((rec: any) => [
+      rec.student_name || rec.student_data?.name || '',
+      rec.roll_no || rec.student_data?.roll || '',
+      rec.class_name || '',
+      rec.student_data?.mother || '',
+      rec.student_data?.father || '',
+      rec.student_data?.gender || '',
+      rec.extra_data?.attendance || '',
+      rec.extra_data?.remark || '',
+      rec.extra_data?.issueDate || '',
+      JSON.stringify(rec.marks_data || {})
+    ]);
+    const csv = [csvHeaders.join(','), ...csvRows.map(r => r.map(esc).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `sbs_local_backup_${stamp}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showNotice(`CSV backup downloaded (${uniqueRecords.length} records).`);
+  };
+
   const renderAiAssistantPanel = (mode: 'inline' | 'modal' = 'inline') => (
     <div className={`${mode === 'inline' ? 'bg-white rounded-2xl border border-purple-100 shadow-sm p-4 mb-6' : 'bg-white rounded-2xl border border-purple-100 shadow-sm p-4'}`}>
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -892,6 +943,12 @@ export default function MarksheetApp() {
                     <DownloadCloud size={18} /> Import Backup CSV
                     <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleBackupImport} />
                   </label>
+                  <button onClick={() => exportLocalBackup('json')} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
+                    <DownloadCloud size={18} /> Backup JSON
+                  </button>
+                  <button onClick={() => exportLocalBackup('csv')} className="bg-white text-gray-700 border-2 border-gray-200 px-4 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50">
+                    <DownloadCloud size={18} /> Backup CSV
+                  </button>
                   <button
                     onClick={() => {
                       const nextValue = !showTableWatermark;
@@ -1134,9 +1191,9 @@ export default function MarksheetApp() {
 
                       <div className="mt-8 space-y-3">
                         <button onClick={() => saveToCloud(true)} disabled={isSaving} className="w-full text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 shadow-lg active:scale-95 transition-all bg-green-600 hover:bg-green-700">
-                          {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save & Add Next
+                          {isSaving ? <Loader2 className="animate-spin"/> : <Save/>} Save Local & Add Next
                         </button>
-                        <button onClick={()=>saveToCloud(false)} className="w-full text-white p-3 rounded-xl font-bold transition-colors shadow-md bg-schoolBlue hover:bg-blue-800">Save & Close</button>
+                        <button onClick={()=>saveToCloud(false)} className="w-full text-white p-3 rounded-xl font-bold transition-colors shadow-md bg-schoolBlue hover:bg-blue-800">Save Local & Close</button>
                         
                         <div className="pt-2 border-t mt-4">
                           <button onClick={triggerSinglePrint} className="w-full bg-gray-800 text-white p-4 rounded-xl font-bold flex justify-center items-center gap-2 hover:bg-gray-900 shadow-lg active:scale-95 transition-all"><Printer size={20}/> Print / Save PDF (HD)</button>
