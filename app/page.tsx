@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -708,7 +708,7 @@ export default function MarksheetApp() {
   };
 
   const triggerBulkPrint = () => {
-    const classStudents = dbStudents.filter(s => s.class_name === activeClass);
+    const classStudents = classFilteredStudents;
     if (classStudents.length === 0) return alert("No students in this class to print!");
     document.body.classList.add('printing-bulk');
     document.title = `Class_${activeClass}_All_Marksheets`;
@@ -755,7 +755,17 @@ export default function MarksheetApp() {
     );
   }
 
-  const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
+  // ⚡ Bolt: Memoized class students filtering to prevent O(N) array operations on every render
+  const classFilteredStudents = useMemo(() => {
+    return dbStudents.filter(s => s.class_name === activeClass);
+  }, [dbStudents, activeClass]);
+
+  // ⚡ Bolt: Memoized search filtering to prevent re-filtering the entire array during typing or other state changes
+  const searchedStudents = useMemo(() => {
+    const query = searchQuery.toUpperCase();
+    if (!query) return classFilteredStudents;
+    return classFilteredStudents.filter(s => (s.student_name || '').toUpperCase().includes(query));
+  }, [classFilteredStudents, searchQuery]);
 
   return (
     <>
@@ -946,7 +956,7 @@ export default function MarksheetApp() {
                   {/* ✅ Original Clean Loading Screen restored here */}
                   {isLoadingList ? <div className="p-10 text-center text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={30}/>Loading...</div> : 
                     classFilteredStudents.length === 0 ? <div className="p-10 text-center text-gray-400">Folder is empty. Add new marksheet.</div> :
-                    classFilteredStudents.filter(s => (s.student_name || '').toUpperCase().includes(searchQuery.toUpperCase())).map((s) => (
+                    searchedStudents.map((s) => (
                       <div key={s.id} className="p-4 flex items-center justify-between hover:bg-blue-50 cursor-pointer group transition-colors" onClick={() => {
                         setEditingId(s.id); 
                         setStudent(s.student_data || { name: s.student_name || "", roll: s.roll_no || "", mother: "", father: "", gender: "MALE" }); 
