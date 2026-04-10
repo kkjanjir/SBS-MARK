@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -720,6 +720,20 @@ export default function MarksheetApp() {
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
+  // ⚡ Bolt: Memoize filtered students to avoid O(N) filtering on every render
+  const classFilteredStudents = useMemo(() => dbStudents.filter(s => s.class_name === activeClass), [dbStudents, activeClass]);
+
+  // ⚡ Bolt: Memoize heavy hidden print components to prevent severe input lag during search/edits
+  const bulkPrintContent = useMemo(() => classFilteredStudents.map((s, index) => {
+    const safeMarks = s.marks_data || {};
+    const calcs = getCalculations(safeMarks, s.class_name);
+    return (
+      <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+        <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+      </div>
+    )
+  }), [classFilteredStudents, activeTheme, showTableWatermark, subjectConfig, dbStudents]);
+
   // ==========================================
   // VIEW 1: SIMPLE PIN SCREEN 🔒
   // ==========================================
@@ -754,8 +768,6 @@ export default function MarksheetApp() {
       </div>
     );
   }
-
-  const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
   return (
     <>
@@ -1182,15 +1194,7 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
-          const calcs = getCalculations(safeMarks, s.class_name);
-          return (
-            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
-            </div>
-          )
-        })}
+        {bulkPrintContent}
       </div>
     </>
   )

@@ -1,0 +1,3 @@
+## 2024-06-03 - [Memoization of Hidden Print Containers]
+**Learning:** Hidden print containers (`display: none` except during printing) that render complex components for an entire list (like bulk print marksheet templates) can cause severe input lag. Every time state updates (e.g., typing in a search bar), React attempts to re-render these massive hidden trees unnecessarily.
+**Action:** Always wrap the `.map()` loops inside hidden print containers in `useMemo` so that they only re-render when the underlying list or dependencies change, decoupling them from frequent, unrelated state updates like input changes.
