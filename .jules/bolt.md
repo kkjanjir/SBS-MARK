@@ -1,0 +1,3 @@
+## 2024-04-11 - Hidden Print Container Re-render Lag
+**Learning:** In a monolithic component design where large, hidden DOM elements (like `#print-bulk-container`) share state with highly interactive inputs, rendering massive collections unconditionally on every keystroke causes severe O(N) input lag, even if the elements are visually hidden.
+**Action:** Always memoize computationally expensive UI elements (like bulk template generators) using `useMemo` when they rely on non-frequently-changing state (like a student list) but exist in a component with rapidly changing state (like search queries or form inputs). Place hooks above early returns to comply with React rules.
