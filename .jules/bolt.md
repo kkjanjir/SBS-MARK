@@ -1,0 +1,3 @@
+## 2024-05-24 - [Avoid O(N) Re-renders on Large Hidden Containers]
+**Learning:** The `#print-bulk-container` holds all student records rendered as complex template components. Since this container is visually hidden until printing, developers often neglect memoizing it. Without `useMemo`, simple state changes (like typing in a search bar or changing a single subject's marks) cause the entire list of heavy `MarksheetTemplate` components to re-render synchronously, leading to severe main-thread blocking and input lag.
+**Action:** When working on print/bulk generation templates, aggressively memoize the rendered output map using `useMemo` and ensure all associated helper functions are wrapped in `useCallback` with stable references.
