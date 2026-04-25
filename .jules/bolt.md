@@ -1,0 +1,3 @@
+## 2024-04-25 - Prevent O(N) Re-renders with Strict Memoization
+**Learning:** Found a severe performance bottleneck with inline helpers (`getCalculations`, `getClassSubjects`) and unmemoized arrays (`classFilteredStudents`) in `app/page.tsx` that reconstructs during render cycles and causes `useMemo` hooks (e.g., inside the bulk print container) to unnecessarily re-trigger, resulting in lag.
+**Action:** Always wrap all helper functions used as hook dependencies with `useCallback` with exact dependency arrays and cache generated filtered arrays via `useMemo` so re-renders do not break caching. In `#print-bulk-container`, generate the template array via `useMemo` to eliminate slow mapping logic during standard re-renders.
