@@ -1,0 +1,3 @@
+## 2024-04-27 - useMemo optimization in App Page
+**Learning:** In highly complex and monolithic React applications like sbs-mark-pro, mapping large datasets within a massive page component directly inside a render flow causes huge rendering delays. When applying `useMemo` specifically around a list rendering `#print-bulk-container`, all functions called inside that memo block (like `getCalculations`, `getGrade`, `getClassRank`) MUST be carefully wrapped in `useCallback` with exact dependency arrays, otherwise the memoization cache bursts on every re-render since those function references change.
+**Action:** Always wrap supporting helper functions mapping inside JSX in `useCallback` when lifting entire JSX blocks into `useMemo`.
