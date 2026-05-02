@@ -1,0 +1,3 @@
+## 2024-06-25 - [Preventing Render Lag in Hidden Print Containers]
+**Learning:** Elements hidden via CSS (like `display: none` or `.print-area { position: absolute; left: -9999px; ... }`) still execute full React render cycles. In large monolithic components, a heavy O(N) map rendering hundreds of sub-components inside a hidden print container will cause severe application-wide input lag on every unrelated state change (e.g., typing in a search input).
+**Action:** Always heavily memoize expensive computations and rendering logic (like bulk print loops) inside hidden containers using `useMemo`. Ensure that all inline helper functions used inside the `useMemo` block are also wrapped in `useCallback` to prevent constant cache invalidation.
