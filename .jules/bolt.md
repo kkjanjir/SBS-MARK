@@ -1,0 +1,3 @@
+## $(date +%Y-%m-%d) - [Memoize hidden print containers]
+**Learning:** In a large single-file React component architecture, hidden elements that map over large arrays (like a bulk print container `display: none`) still execute full React render cycles on unrelated state updates. Without heavy memoization, typing in an unrelated input triggers O(N) renders of complex nested components, causing severe input lag.
+**Action:** Always heavily memoize components and derived state arrays mapped inside hidden DOM nodes that don't need to respond to immediate user input changes. Use `useMemo` on the map result and `useCallback` on all helper functions used inside the map.
