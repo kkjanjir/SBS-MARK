@@ -924,7 +924,7 @@ export default function MarksheetApp() {
                                 try {
                                   const parsed = JSON.parse(e.target.value || '{}');
                                   setAiDraftRows(prev => prev.map((r, i) => i===idx ? { ...r, subjects: parsed } : r));
-                                } catch {}
+                                } catch (error) { console.error('Failed to parse subjects JSON:', error); }
                               }} className="w-full p-1 border rounded min-h-[70px]" />
                             </td>
                             <td className="border p-1">
