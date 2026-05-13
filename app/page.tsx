@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -140,13 +140,13 @@ export default function MarksheetApp() {
     });
   };
 
-  const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
+  const getDynamicSubjects = useCallback((mObj: MarksState | null | undefined, fallback: string[]) => {
     const markKeys = Object.keys(mObj || {}).filter(Boolean);
     if (markKeys.length === 0) return fallback;
     return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
-  };
+  }, []);
 
-  const getClassSubjects = (clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS);
+  const getClassSubjects = useCallback((clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS), [getDynamicSubjects, subjectConfig]);
   const currentSubjectsList = getClassSubjects(activeClass, marks);
 
   const showNotice = (message: string) => {
@@ -414,14 +414,14 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   };
 
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
+  const getGrade = useCallback((marksObtained: number | string, maxMarks: number) => {
     if (marksObtained === '') return '';
     let p = (Number(marksObtained) / maxMarks) * 100;
     if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
-  };
+  }, []);
 
-  const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
+  const getCalculations = useCallback((mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
@@ -430,7 +430,7 @@ export default function MarksheetApp() {
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
     return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
-  };
+  }, [getClassSubjects, getGrade]);
 
   const { grandTotal, percentage, finalGrade } = getCalculations(marks, activeClass);
 
@@ -446,7 +446,7 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  const getClassRank = (myTotal: number, clsName: string) => {
+  const getClassRank = useCallback((myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
@@ -454,7 +454,7 @@ export default function MarksheetApp() {
     allTotals.sort((a, b) => b - a); 
     const rank = allTotals.indexOf(myTotal) + 1;
     return rank > 0 ? `${rank}` : "";
-  };
+  }, [dbStudents]);
 
   const handleBackupImport = async (e: any) => {
     const file = e.target.files?.[0];
@@ -720,6 +720,24 @@ export default function MarksheetApp() {
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
+  const classFilteredStudents = useMemo(() => {
+    return dbStudents.filter(s => s.class_name === activeClass);
+  }, [dbStudents, activeClass]);
+
+  // Memoize the expensive bulk print content to prevent O(N) re-renders
+  // on unrelated state changes, as hidden print containers still execute React render cycles.
+  const bulkPrintContent = useMemo(() => {
+    return classFilteredStudents.map((s, index) => {
+      const safeMarks = s.marks_data || {};
+      const calcs = getCalculations(safeMarks, s.class_name);
+      return (
+        <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+        </div>
+      )
+    });
+  }, [classFilteredStudents, getCalculations, getClassSubjects, getClassRank, activeTheme, showTableWatermark]);
+
   // ==========================================
   // VIEW 1: SIMPLE PIN SCREEN 🔒
   // ==========================================
@@ -754,8 +772,6 @@ export default function MarksheetApp() {
       </div>
     );
   }
-
-  const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
   return (
     <>
@@ -1182,15 +1198,7 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
-          const calcs = getCalculations(safeMarks, s.class_name);
-          return (
-            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
-            </div>
-          )
-        })}
+        {bulkPrintContent}
       </div>
     </>
   )
