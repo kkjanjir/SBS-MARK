@@ -1,0 +1,3 @@
+## 2024-05-17 - React rendering lifecycle bottleneck in hidden print containers
+**Learning:** Elements hidden via CSS (`display: none`), like print containers, still execute full React render cycles. In monolithic structures like `app/page.tsx`, `O(N)` renders (such as mapping over students for bulk printing) will cause severe input lag application-wide on every state change unless strictly memoized. `useCallback` on inline helper functions is required to prevent invalidating `useMemo` hooks.
+**Action:** Always strongly memoize heavy computations and list rendering (e.g. `useMemo` and `useCallback`) inside print containers or hidden UI segments to decouple their re-rendering from unrelated state updates.
