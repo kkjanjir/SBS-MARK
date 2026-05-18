@@ -1,0 +1,3 @@
+## 2024-05-19 - Unmemoized React array mappings in hidden print containers cause O(N) input lag
+**Learning:** In a monolithic React application, mapping over arrays to generate complex components (like `MarksheetTemplate`) inside a container hidden via CSS (`display: none`) still triggers a full React render cycle for those components on every state change (e.g., keystrokes in an editor).
+**Action:** Any heavy list mapping inside conditionally hidden structural components MUST be heavily memoized using `useMemo` with minimal dependencies to prevent massive application-wide input lag. Any inline helper functions used inside the map need to be wrapped in `useCallback`.
