@@ -1,0 +1,3 @@
+## 2024-05-19 - Extracted helper functions and strongly memoized print elements
+**Learning:** In a monolithic React component like `app/page.tsx`, hidden elements like the bulk print container (which renders many heavy `MarksheetTemplate` instances) can cause severe input lag across the app if they re-render on unrelated state changes (like typing in a search bar).
+**Action:** Extract pure helper functions (like `getDynamicSubjects`, `getGrade`, `parseCsvLine`, `formatDate`) outside the React component completely so they are never re-created. Heavily utilize `useMemo` on expensive components, particularly arrays/lists of elements that don't need to update frequently. Ensure `useCallback` wraps any internal helper functions passed as dependencies to `useMemo`.
