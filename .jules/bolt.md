@@ -1,0 +1,3 @@
+## 2025-02-18 - Memoizing Hidden Print Containers
+**Learning:** In this Next.js/React application, elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. The `#print-bulk-container` rendered a massive array of heavy `<MarksheetTemplate />` components on every state change because it wasn't memoized.
+**Action:** Always memoize heavy map operations used for hidden print views using `useMemo` at the top level of the component scope, and ensure all dependency functions (like `getCalculations` or `getClassSubjects`) are wrapped in `useCallback` or extracted completely out of the component if they are pure.
