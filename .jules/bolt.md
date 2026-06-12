@@ -1,0 +1,4 @@
+
+## 2024-05-24 - React Hook Optimization in Monolithic Component
+**Learning:** Extracting purely functional non-state dependent helper functions (e.g., `getGrade`, `getDynamicSubjects`) entirely outside the main component scope prevents unnecessary function recreation across all renders.  When modifying components to use `useMemo` in a codebase where everything is inline, it is crucial to ensure all hooks are placed top-level above early returns (e.g. `!isUnlocked`) and helper functions used inside them (e.g. `getCalculations`, `getClassSubjects`, `getClassRank`) are wrapped in `useCallback` to avoid dependency changes on every render.
+**Action:** Always inspect the whole component structure when adding hooks to verify they sit above any conditional early returns and that dependencies of newly memoized complex elements are stable to avoid invalidating the cache unnecessarily.
