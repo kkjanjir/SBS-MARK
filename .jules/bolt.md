@@ -1,0 +1,3 @@
+## 2023-10-27 - Strong Memoization for Hidden Print Containers
+**Learning:** In this application, elements hidden via CSS (like the `#print-bulk-container` which uses `display: none` on screen) still execute full React render cycles. Large `.map()` loops inside them can cause severe application-wide input lag (e.g., when typing in search) because they recreate and render for every state change.
+**Action:** Heavily utilize `useMemo` for any complex mapping or computations related to hidden print containers. Ensure dependencies of the `useMemo` (like helper functions) are also properly memoized with `useCallback` or moved out of the component entirely to prevent cache invalidation.
