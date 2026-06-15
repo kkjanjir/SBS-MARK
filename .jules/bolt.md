@@ -1,0 +1,4 @@
+## 2024-03-24 - Extracted helpers and Memoized bulk print container
+**Learning:** In this application, elements hidden via CSS (`display: none` like `#print-bulk-container`) still execute full React render cycles. Heavy computations or loops inside them must be strongly memoized (e.g., using `useMemo` and `useCallback`) to prevent application-wide input lag on unrelated state changes. Furthermore, purely functional, non-state dependent helper functions like `getDynamicSubjects` and `getGrade` should be extracted outside the main component scope to prevent unnecessary recreation.
+
+**Action:** Extracted `getDynamicSubjects` and `getGrade` out of the component. Memoized the inner map of `#print-bulk-container` using `useMemo`, and wrapped its dependencies (`getCalculations`, `getClassSubjects`, `getClassRank`) in `useCallback` to prevent constant re-rendering of hidden bulk content, which greatly speeds up the application.
