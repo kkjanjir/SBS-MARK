@@ -1,0 +1,3 @@
+## 2024-06-28 - Optimizing React Performance in a Monolithic Component
+**Learning:** In a very large component like `MarksheetApp`, many helper functions like `getGrade`, `getCalculations`, and `getClassSubjects` are defined inline and recreated every render. Also, elements hidden by CSS (like `#print-bulk-container`) are heavily executing full render cycles, including mappings of students rendering `MarksheetTemplate`. `MarksheetTemplate` is not wrapped in `React.memo()`.
+**Action:** Extract pure helper functions outside the component scope where possible. Wrap `MarksheetTemplate` in `React.memo` to prevent re-renders when parent state changes but props don't. Memoize the bulk mapping operation if it relies on a large dataset and is structurally hidden/inactive.
