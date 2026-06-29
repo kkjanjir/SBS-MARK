@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -65,6 +65,20 @@ export default function MarksheetApp() {
   const [newSubInput, setNewSubInput] = useState('');
 
   const [dbStudents, setDbStudents] = useState<any[]>([]);
+
+  const studentLookups = useMemo(() => {
+    const nameToIndex = new Map<string, number>();
+    const rollToIndex = new Map<string, number>();
+    dbStudents.forEach((s, idx) => {
+      const nameKey = (s.student_name || '').toUpperCase();
+      if (nameKey && !nameToIndex.has(nameKey)) nameToIndex.set(nameKey, idx);
+      const rollKey = s.roll_no ? `${s.roll_no}` : null;
+      if (rollKey && !rollToIndex.has(rollKey)) rollToIndex.set(rollKey, idx);
+    });
+    return { nameToIndex, rollToIndex };
+  }, [dbStudents]);
+
+
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [lastSaved, setLastSaved] = useState('');
@@ -625,11 +639,14 @@ export default function MarksheetApp() {
   const applyAiDraftRow = (idx: number) => {
     const row = aiDraftRows[idx];
     if (!row) return;
-    const allStudents = [...dbStudents];
-    const matched = allStudents.find(s =>
-      (s.student_name || '').toUpperCase() === (row.student_name || '').toUpperCase() ||
-      (row.roll_no && `${s.roll_no}` === `${row.roll_no}`)
-    );
+    const nameKey = (row.student_name || '').toUpperCase();
+    const rollKey = row.roll_no ? `${row.roll_no}` : null;
+    const nIdx = nameKey ? studentLookups.nameToIndex.get(nameKey) : undefined;
+    const rIdx = rollKey ? studentLookups.rollToIndex.get(rollKey) : undefined;
+    let matchedIdx: number | undefined = undefined;
+    if (nIdx !== undefined && rIdx !== undefined) matchedIdx = Math.min(nIdx, rIdx);
+    else matchedIdx = nIdx ?? rIdx;
+    const matched = matchedIdx !== undefined ? dbStudents[matchedIdx] : undefined;
     const rowSubjects = Object.keys(row.subjects || {}).slice(0, 8);
     if (rowSubjects.length) {
       setSubjectConfig(prev => {
