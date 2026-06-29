@@ -1,4 +1,5 @@
 'use client'
+import { calculateClassRank } from './utils';
 import { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
@@ -447,13 +448,7 @@ export default function MarksheetApp() {
   }, [step, finalGrade]);
 
   const getClassRank = (myTotal: number, clsName: string) => {
-    if (myTotal === 0) return "";
-    const classStudents = dbStudents.filter(s => s.class_name === clsName);
-    let allTotals = classStudents.map(s => s.extra_data?.total || 0);
-    if (!allTotals.includes(myTotal)) allTotals.push(myTotal); 
-    allTotals.sort((a, b) => b - a); 
-    const rank = allTotals.indexOf(myTotal) + 1;
-    return rank > 0 ? `${rank}` : "";
+    return calculateClassRank(myTotal, clsName, dbStudents);
   };
 
   const handleBackupImport = async (e: any) => {
