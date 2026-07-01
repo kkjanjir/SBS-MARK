@@ -1,0 +1,3 @@
+## 2024-05-24 - Hidden Elements Execution Lifecycle
+**Learning:** In React applications, elements hidden via CSS (e.g., `display: none` in print containers like `#print-bulk-container`) still participate fully in the React render cycle. Complex mapping operations or heavy component rendering inside these hidden sections can cause severe, application-wide input lag (e.g., during keystrokes).
+**Action:** Always wrap heavy data-mapping logic and component renders intended for hidden/print-only containers in `useMemo` at the top level of the component scope, and ensure that inner components (like `MarksheetTemplate`) use `React.memo` to bypass rendering when shallow props remain unchanged.
