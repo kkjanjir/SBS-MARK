@@ -1,0 +1,3 @@
+## 2025-02-14 - [React Component Optimization in Monolithic Files]
+**Learning:** In a massive, single-file React component architecture (`app/page.tsx`), hidden DOM elements (like `#print-bulk-container`) executing `array.map()` can cause severe UI lag across the entire app if inline functions/objects are passed to heavily rendered child components (like `MarksheetTemplate`), because they bypass shallow comparison and trigger O(N) renders on every state change.
+**Action:** When adding `React.memo` to heavily mapped child components, ensure all complex props are either strictly stable or bypass the prop-drilling issue by wrapping the entire mapping loop (`[...].map()`) inside a parent-level `useMemo` block.
