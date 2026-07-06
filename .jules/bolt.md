@@ -1,0 +1,3 @@
+## 2024-05-18 - [React Mapping Bottleneck in Hidden DOM Elements]
+**Learning:** In this application, elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. Because `print-bulk-container` mapped over `classFilteredStudents` without any top-level memoization, typing in `searchQuery` triggered an O(N) re-render of complex `<MarksheetTemplate />` structures, causing severe input lag.
+**Action:** Extract static default props outside the component scope to preserve shallow equality, wrap heavily mapped components in `React.memo`, and use `useMemo` at the top level of the parent component (above any early returns) to prevent the hidden list from re-rendering when unrelated state changes.
