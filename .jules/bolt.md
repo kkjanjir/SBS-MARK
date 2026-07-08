@@ -1,0 +1,3 @@
+## 2025-03-09 - Memoizing Hidden Print Container Mapping Loops
+**Learning:** In this application's architecture, elements hidden via CSS `display: none` (like `#print-bulk-container`) still undergo full React render cycles. If they contain massive O(N) `array.map` operations rendering heavy components (`MarksheetTemplate`), they will freeze the UI on *every* unrelated state change in the parent container (like search inputs). Simply relying on shallow component rendering is not enough.
+**Action:** Always wrap massive mapping iterations intended for hidden bulk printing inside a `useMemo` block at the parent level, and extract any inline default props or helper functions to the module scope to preserve the `useMemo` caching and prevent severe input lag.
