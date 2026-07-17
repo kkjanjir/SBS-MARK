@@ -1,0 +1,3 @@
+## 2024-05-15 - React.memo() on heavily mapped components
+**Learning:** `MarksheetTemplate` is rendered for every student in a class inside `#print-bulk-container`. Without `React.memo`, any state change in `page.tsx` (like typing in a search bar, or changing an unrelated input) will trigger a full re-render of potentially hundreds of hidden `MarksheetTemplate` instances. Because it contains heavy DOM elements, this causes severe UI lag.
+**Action:** Wrap `MarksheetTemplate` in `React.memo` and ensure that inline object/array creation (e.g. `student={s.student_data || {}}` and `coScholastic={... || {...}}`) are moved to stable references outside the render cycle or the component to prevent breaking shallow comparison.
