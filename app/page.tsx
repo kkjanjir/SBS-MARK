@@ -1,7 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+
+const DEFAULT_EMPTY_OBJ = {};
+const DEFAULT_CO_SCHOLASTIC = {sports:'A',art:'A',music:'A',discipline:'A'};
 
 // 🚀 SUPABASE CONNECTION
 const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
@@ -1187,7 +1190,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || DEFAULT_EMPTY_OBJ} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || DEFAULT_EMPTY_OBJ} coScholastic={s.extra_data?.coScholastic || DEFAULT_CO_SCHOLASTIC} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1199,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1352,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+});
