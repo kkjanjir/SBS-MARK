@@ -1,0 +1,3 @@
+## 2024-07-26 - Memoizing hidden large DOM chunks
+**Learning:** In this application, elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. The bulk print container renders O(N) complex components for a whole class, causing severe input lag on unrelated state changes.
+**Action:** Heavily memoize these background DOM blocks. Specifically, wrap the mapping operation generating them inside a `useMemo` (e.g., `bulkPrintElements`) at the component top level, and ensure all dependent functions (`getCalculations`, `getClassSubjects`) are wrapped in `useCallback` to prevent stale closure invalidation.
