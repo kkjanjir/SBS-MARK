@@ -1,0 +1,3 @@
+## 2024-07-29 - React rendering optimizations for heavy components
+**Learning:** In a monolithic Next.js file (`app/page.tsx`), large hidden components rendered in loops (e.g., `#print-bulk-container`) can cause severe input lag when unrelated states change. Pure utilities (`getDynamicSubjects`, `getGrade`) should be extracted outside the component to avoid recreation, while props/calculations passed to memoized components (`MarksheetTemplate`) should be wrapped in `useCallback` and `useMemo` with proper dependencies.
+**Action:** When working on performance improvements involving heavily mapped components, extract pure functions out of scope and ensure referential equality for functions and derived data passed as props using `useCallback` and `useMemo`.
