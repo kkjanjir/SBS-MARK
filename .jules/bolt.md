@@ -1,0 +1,3 @@
+## 2026-08-03 - [Extracted pure functions and memoized map loops]
+**Learning:** In this application, elements hidden via CSS (like the `print-bulk-container`) still execute full React render cycles. Large scale mapping operations generating `MarksheetTemplate` components caused severe rendering lags when typing in inputs due to missing memoization.
+**Action:** Extract pure helper functions (e.g., `getDynamicSubjects`, `getGrade`) outside the component scope to prevent their recreation. Wrap large rendering loops in `useMemo` and rely on correctly memoized props via `useCallback` for functions like `getCalculations`.
