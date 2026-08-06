@@ -1,0 +1,4 @@
+
+## 2026-08-06 - [Performance Insight] Memoization of Hidden Print Elements
+**Learning:** In this application, elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. Heavy computations or DOM structures (like bulk marksheet generation) inside them will cause application-wide input lag on every unrelated state change if not aggressively memoized. Also, when using `useMemo` in such heavy parent nodes, inner complex components (like `MarksheetTemplate`) should be wrapped in `React.memo()`, and pure utility functions extracted entirely to prevent constant re-evaluation of closures.
+**Action:** Always wrap heavy list mappings in `useMemo` at the top level of the component scope (to satisfy hook rules), especially when rendering large collections of data off-screen, and ensure their internal components are pure and structurally memoized.
