@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -42,6 +42,22 @@ type BackupRecord = {
   created_at?: string;
 };
 type AiDraftRow = { student_name: string; roll_no?: string; subjects: Record<string, { t1?: string; t2?: string; t3?: string }> };
+
+const EMPTY_OBJ = {};
+const DEFAULT_COSCHOLASTIC = {sports:'A',art:'A',music:'A',discipline:'A'};
+
+const getDynamicSubjects = (mObj: any, fallback: string[]) => {
+  const markKeys = Object.keys(mObj || {}).filter(Boolean);
+  if (markKeys.length === 0) return fallback;
+  return [...fallback.filter((sub: string) => markKeys.includes(sub)), ...markKeys.filter((sub: string) => !fallback.includes(sub))];
+};
+
+const getGrade = (m: number | string, max: number) => {
+  if (m === '') return '';
+  let p = (Number(m) / max) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
+};
 
 export default function MarksheetApp() {
   // 🔒 LOCAL ACCESS PIN
@@ -140,11 +156,6 @@ export default function MarksheetApp() {
     });
   };
 
-  const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
-    const markKeys = Object.keys(mObj || {}).filter(Boolean);
-    if (markKeys.length === 0) return fallback;
-    return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
-  };
 
   const getClassSubjects = (clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS);
   const currentSubjectsList = getClassSubjects(activeClass, marks);
@@ -414,12 +425,6 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   };
 
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return '';
-    let p = (Number(marksObtained) / maxMarks) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
-  };
 
   const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
@@ -1183,11 +1188,11 @@ export default function MarksheetApp() {
 
       <div id="print-bulk-container" className="print-area">
         {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
+          const safeMarks = s.marks_data || EMPTY_OBJ; // ⚡ Bolt: Use stable reference for safeMarks
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || EMPTY_OBJ} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || EMPTY_OBJ} coScholastic={s.extra_data?.coScholastic || DEFAULT_COSCHOLASTIC} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,13 +1201,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
-  const getGrade = (m: number | string, max: number) => {
-    if (m === '') return '';
-    let p = (Number(m) / max) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
-  };
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
@@ -1349,4 +1348,35 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // ⚡ Bolt: Custom comparator to prevent unnecessary re-renders of MarksheetTemplate.
+  if (prevProps.activeClass !== nextProps.activeClass ||
+      prevProps.grandTotal !== nextProps.grandTotal ||
+      prevProps.percentage !== nextProps.percentage ||
+      prevProps.finalGrade !== nextProps.finalGrade ||
+      prevProps.rank !== nextProps.rank ||
+      prevProps.photo !== nextProps.photo ||
+      prevProps.showTableWatermark !== nextProps.showTableWatermark ||
+      prevProps.theme !== nextProps.theme) {
+    return false;
+  }
+
+  // Shallow compare objects and arrays
+  const shallowCompare = (obj1: any, obj2: any) => {
+    if (obj1 === obj2) return true;
+    if (typeof obj1 !== 'object' || obj1 === null || typeof obj2 !== 'object' || obj2 === null) return false;
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
+    if (keys1.length !== keys2.length) return false;
+    for (let key of keys1) {
+      if (obj1[key] !== obj2[key]) return false;
+    }
+    return true;
+  };
+
+  return shallowCompare(prevProps.subjectsList, nextProps.subjectsList) &&
+         shallowCompare(prevProps.marks, nextProps.marks) &&
+         shallowCompare(prevProps.student, nextProps.student) &&
+         shallowCompare(prevProps.extra, nextProps.extra) &&
+         shallowCompare(prevProps.coScholastic, nextProps.coScholastic);
+});
