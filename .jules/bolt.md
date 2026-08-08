@@ -1,0 +1,3 @@
+## 2024-05-30 - [Memoizing Bulk Render Components]
+**Learning:** Hidden components (like `#print-bulk-container` with `display: none` via CSS) still execute full React render cycles. Mapping a large array of complex components inside them without heavy memoization leads to O(N) re-renders, causing significant input lag on the rest of the application during state changes.
+**Action:** Always extract static defaults outside the component, wrap pure helpers outside, and strictly memoize (`React.memo`, `useMemo`, `useCallback`) mapped complex components that are conditionally hidden via CSS, especially for print views.
