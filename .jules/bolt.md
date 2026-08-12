@@ -1,0 +1,3 @@
+## 2026-08-12 - Wrap heavily rendered component mapping with React.memo and define static fallbacks to preserve referential equality
+**Learning:** Using inline object fallbacks like `{}` or arrays in mapped component props completely defeats `React.memo` optimizations by creating a new reference on every render loop, causing extreme lag when printing bulk items hidden by CSS `display: none` because full render cycles are still executed for these nodes.
+**Action:** Always extract default objects/arrays outside the component scope (e.g., `const defaultStudent = {}`) and wrap heavily iterated sub-components with `React.memo` to ensure shallow equality blocks unnecessary DOM recalculations.
