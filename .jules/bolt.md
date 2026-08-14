@@ -1,0 +1,3 @@
+## 2024-08-14 - [React Anti-Pattern] Memoization requires pure outer functions
+**Learning:** In a monolithic React component with complex state dependencies (like `MarksheetApp`), optimizing a heavily rendered bulk print list with `useMemo` fails to cache effectively if the helper functions it depends on (e.g., `getClassSubjects`, `getCalculations`, `getClassRank`) are recreated on every render.
+**Action:** Extract fully stateless, pure functions (`getDynamicSubjects`, `getGrade`) outside the component scope completely. Wrap remaining helper functions that depend on component state (like `dbStudents`) in `useCallback` with their exact dependencies, before referencing them in downstream `useMemo` dependency arrays.
