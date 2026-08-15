@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -27,6 +27,15 @@ const THEMES = {
 
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
+
+
+// Pure utility function moved outside component to prevent recreation on re-renders
+const getGrade = (marksObtained: number | string, maxMarks: number) => {
+  if (marksObtained === '') return '';
+  let p = (Number(marksObtained) / maxMarks) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
+};
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
@@ -412,13 +421,6 @@ export default function MarksheetApp() {
     setCoScholastic({ sports: "A", art: "A", music: "A", discipline: "A" });
     setStudentPhoto(null);
     setActiveSubjectIdx(0);
-  };
-
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return '';
-    let p = (Number(marksObtained) / maxMarks) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
   const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
@@ -1196,14 +1198,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
-  const getGrade = (m: number | string, max: number) => {
-    if (m === '') return '';
-    let p = (Number(m) / max) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
-  };
-
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split('-');
@@ -1349,4 +1344,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+});
