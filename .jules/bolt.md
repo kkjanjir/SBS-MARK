@@ -1,0 +1,3 @@
+## 2024-08-17 - React.memo and useMemo for Hidden Print Containers
+**Learning:** Elements hidden via CSS (`display: none`) in React still execute full render cycles on state changes. In this monolithic app, the bulk print container mapped over all students with the heavy `MarksheetTemplate` component, causing severe input lag when typing in unrelated fields. Wrapping the component in `React.memo` is insufficient without memoizing the mapping itself or strictly enforcing referential equality of all props.
+**Action:** Extract pure helper functions (`getDynamicSubjects`, `getGrade`) outside the component to prevent recreation. Wrap mapping logic of hidden but large component lists in `useMemo` with strictly controlled dependencies to completely skip O(N) re-renders.
