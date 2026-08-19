@@ -1,0 +1,3 @@
+## 2024-08-19 - [Memoize inline structures inside mapping for hidden print components]
+**Learning:** Elements hidden via CSS (like print containers with display: none) still execute full React render cycles. Providing newly created arrays/objects to heavy components in mapping operations (e.g. `student={data || {}}`) completely defeats shallow equality and triggers O(N) re-renders, causing severe input lag on seemingly unrelated operations due to the way Next.js/React re-renders on state update.
+**Action:** Extract static defaults outside the component and wrap the entire mapping operation with `useMemo` when rendering components hidden by CSS `display: none` to minimize input lag impact.
