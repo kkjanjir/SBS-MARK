@@ -1,0 +1,3 @@
+## 2024-10-25 - React.memo on MarksheetTemplate and helper extractions
+**Learning:** Elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. Heavy computations or loops inside them must be strongly memoized (e.g., using `React.memo`, `useMemo`, and extracting pure functions) to prevent application-wide input lag on unrelated state changes.
+**Action:** Extract pure helper functions outside component scope or memoize them heavily with `useCallback`. Wrap highly replicated components with `React.memo()`. Cache expensive mapped iterations in `useMemo`.
