@@ -1,0 +1,3 @@
+## 2024-05-24 - [Hidden Print Container Memoization]
+**Learning:** [In this application, elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. Heavy computations or loops inside them must be strongly memoized using `useMemo`, and their helper dependencies wrapped in `useCallback` to prevent application-wide input lag on unrelated state changes.]
+**Action:** [When optimizing bulk mapping operations, extract purely functional helpers globally, wrap state-dependent helpers in `useCallback`, define stable default prop objects globally, and wrap the entire mapping block in `useMemo` before returning it in JSX.]

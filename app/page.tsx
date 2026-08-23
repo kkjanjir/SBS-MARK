@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -23,6 +23,25 @@ const THEMES = {
   royal: { id: 'royal', name: 'Royal Purple', border: 'border-purple-800', text: 'text-purple-800', bg: 'bg-purple-800', textSecondary: 'text-amber-800', bgHeader: 'bg-purple-100', bgHighlight: 'bg-amber-50', ring: 'ring-purple-800' },
   ocean: { id: 'ocean', name: 'Ocean Blue', border: 'border-blue-700', text: 'text-blue-700', bg: 'bg-blue-700', textSecondary: 'text-gray-800', bgHeader: 'bg-blue-100', bgHighlight: 'bg-indigo-50', ring: 'ring-blue-700' },
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
+};
+
+
+const defaultEmptyObj = {};
+const defaultCoScholastic = { sports: "A", art: "A", music: "A", discipline: "A" };
+
+// ⚡ Bolt Optimization: Extracted helper function to prevent recreation across renders.
+const getGrade = (m: number | string, max: number) => {
+  if (m === '') return '';
+  let p = (Number(m) / max) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
+};
+
+// ⚡ Bolt Optimization: Extracted purely functional helper outside the component to prevent recreation on every render.
+const getDynamicSubjects = (mObj: Record<string, { t1: string; t2: string; t3: string }> | null | undefined, fallback: string[]) => {
+  const markKeys = Object.keys(mObj || {}).filter(Boolean);
+  if (markKeys.length === 0) return fallback;
+  return [...fallback.filter((sub: string) => markKeys.includes(sub)), ...markKeys.filter((sub: string) => !fallback.includes(sub))];
 };
 
 const currentYear = new Date().getFullYear();
@@ -140,13 +159,7 @@ export default function MarksheetApp() {
     });
   };
 
-  const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
-    const markKeys = Object.keys(mObj || {}).filter(Boolean);
-    if (markKeys.length === 0) return fallback;
-    return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
-  };
-
-  const getClassSubjects = (clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS);
+  const getClassSubjects = useCallback((clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS), [subjectConfig]);
   const currentSubjectsList = getClassSubjects(activeClass, marks);
 
   const showNotice = (message: string) => {
@@ -414,14 +427,7 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   };
 
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return '';
-    let p = (Number(marksObtained) / maxMarks) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
-  };
-
-  const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
+  const getCalculations = useCallback((mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
@@ -430,7 +436,7 @@ export default function MarksheetApp() {
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
     return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
-  };
+  }, [getClassSubjects]);
 
   const { grandTotal, percentage, finalGrade } = getCalculations(marks, activeClass);
 
@@ -446,7 +452,7 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  const getClassRank = (myTotal: number, clsName: string) => {
+  const getClassRank = useCallback((myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
@@ -454,7 +460,7 @@ export default function MarksheetApp() {
     allTotals.sort((a, b) => b - a); 
     const rank = allTotals.indexOf(myTotal) + 1;
     return rank > 0 ? `${rank}` : "";
-  };
+  }, [dbStudents]);
 
   const handleBackupImport = async (e: any) => {
     const file = e.target.files?.[0];
@@ -756,6 +762,20 @@ export default function MarksheetApp() {
   }
 
   const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
+
+
+  // ⚡ Bolt Optimization: Memoized the complex bulk print mapping operation to prevent O(N) re-renders when parent state changes, drastically reducing input lag.
+  const bulkPrintPages = useMemo(() => {
+    return classFilteredStudents.map((s: any, index: number) => {
+      const safeMarks = s.marks_data || defaultEmptyObj;
+      const calcs = getCalculations(safeMarks, s.class_name);
+      return (
+        <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultEmptyObj} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultEmptyObj} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+        </div>
+      )
+    });
+  }, [classFilteredStudents, activeTheme, getClassSubjects, getCalculations, getClassRank, showTableWatermark]);
 
   return (
     <>
@@ -1182,28 +1202,14 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
-          const calcs = getCalculations(safeMarks, s.class_name);
-          return (
-            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
-            </div>
-          )
-        })}
+        {bulkPrintPages}
       </div>
     </>
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
-  const getGrade = (m: number | string, max: number) => {
-    if (m === '') return '';
-    let p = (Number(m) / max) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
-  };
-
+// ⚡ Bolt Optimization: Wrapped MarksheetTemplate in React.memo to prevent unnecessary re-renders when parent state changes. Relying on global default objects for props prevents shallow comparison cache invalidation.
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split('-');
@@ -1349,4 +1355,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+});
