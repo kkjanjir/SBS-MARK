@@ -1,0 +1,3 @@
+## 2025-03-01 - Extracted functional helpers and added React.memo to heavily used component
+**Learning:** Functions defined inline within a React component that don't depend on state (like purely functional helpers) get recreated on every render, invalidating React.memo caches for child components that receive them or use them internally. Hiding DOM elements with CSS (`display: none`) does not stop React from running a full render cycle on them.
+**Action:** Always extract purely functional helpers entirely outside the main component scope and ensure child components within hidden containers use `React.memo` with stable referential props.
