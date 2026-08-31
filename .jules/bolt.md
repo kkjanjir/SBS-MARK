@@ -1,0 +1,3 @@
+## 2024-05-18 - [Optimizing Hidden Print Containers]
+**Learning:** Elements hidden via CSS `display: none` still execute full React render cycles. If a component (like a MarksheetTemplate inside a bulk print container) is not wrapped in `React.memo` and is receiving inline empty objects like `{}`, it will re-render on every state update, causing severe O(N) input lag across the entire application even when the container is not visible.
+**Action:** When working with hidden list containers, strictly memoize the entire `.map()` output using `useMemo` at the parent level, wrap the item component in `React.memo()`, and define static fallback objects outside the component to preserve reference equality and avoid invalidating the memo cache.
