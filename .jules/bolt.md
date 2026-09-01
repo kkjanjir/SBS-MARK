@@ -1,0 +1,3 @@
+## 2024-09-01 - React.memo Pitfalls with Inline Props
+**Learning:** Wrapping a component in `React.memo` is completely ineffective if the parent component passes newly created inline objects or arrays (like `student={data || {}}` or `extra={data || {}}`) as props on every render cycle. `React.memo` relies on strict shallow equality (`===`).
+**Action:** Always define default fallback objects (e.g., `const defaultStudent = {}`) statically *outside* the component scope and use those references when passing props, ensuring referential stability and allowing `React.memo` to properly bail out of renders.
