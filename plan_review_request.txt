@@ -1,0 +1,8 @@
+1. Use a Python script via `run_in_bash_session` to wrap `MarksheetTemplate` with `React.memo` in `app/page.tsx`. This avoids unnecessary re-renders of the large component for every keystroke when typing into the app, significantly improving performance (especially in the bulk printing container).
+2. Define static defaults (`defaultStudent`, `defaultExtra`, `defaultCoScholastic`) outside the component to prevent breaking `React.memo`'s shallow comparison with inline `{}` objects.
+3. Update `app/page.tsx` using `replace_with_git_merge_diff` or a Python script to use these defaults in `MarksheetTemplate` invocations.
+4. Verify the changes using `grep` and `npx tsc` (using the isolated check method for this codebase).
+5. Clean up temporary scripts.
+6. Test type safety locally using isolated typescript checking (using a temporary `tmp_tsc` directory).
+7. Complete pre-commit steps: Complete pre commit steps to ensure proper testing, verification, review, and reflection are done.
+8. Create PR using `submit` tool with title "⚡ Bolt: [performance improvement]" and required description.
