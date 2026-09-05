@@ -1,0 +1,4 @@
+## 2024-09-05 - Optimize Bulk Print Container with useMemo
+
+**Learning:** In a large, monolithic Next.js application, rendering long lists of complex components (like the marksheet pages in `#print-bulk-container`) can cause severe performance degradation if the mapped array is re-evaluated on every parent render cycle (e.g., when the user types in an unrelated input field). Inline object literals passed as props (e.g., `student={s.student_data || {}}`) break `React.memo`'s shallow equality check, forcing unnecessary child re-renders.
+**Action:** Extract purely functional helpers and constant fallback objects (e.g., `defaultStudent`) outside the component scope to guarantee referential stability. Use `useMemo` to cache expensive, derived lists, and ensure all internal functions passed to the dependency arrays are wrapped in `useCallback`. This pattern prevents costly DOM recalculations in hidden but fully-rendered UI components.
