@@ -1,0 +1,3 @@
+## 2024-09-07 - [Performance Optimization] Extract pure functions and memoize mapping
+**Learning:** Extracting purely functional helper functions (like `getGrade` and `getDynamicSubjects`) out of the main React component prevents unnecessary recreation and cache invalidation across massive render cycles, especially inside heavily mapped hidden print containers.
+**Action:** When working on complex monolithic React components with hidden heavy lists (like print containers), always memoize the derived mapping array using `useMemo` and ensure any callbacks passed inside `useMemo` are wrapped with `useCallback` to prevent cascading render lag across unrelated state changes.
