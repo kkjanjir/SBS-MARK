@@ -1,0 +1,3 @@
+## 2024-09-19 - [Performance Optimization: React Memoization in Print Containers]
+**Learning:** Elements hidden via CSS (like print containers with `display: none`) still execute full React render cycles. Heavy computations or loops inside them must be strongly memoized (e.g., using `useMemo` and `useCallback`) to prevent application-wide input lag on unrelated state changes.
+**Action:** In future, ensure all mapping operations and heavily used components within hidden structural elements like print blocks are wrapped in `React.memo` and `useMemo`. Ensure default object references are defined outside the component to prevent shallow comparison checks from failing.
