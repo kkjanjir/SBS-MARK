@@ -1,0 +1,3 @@
+## 2026-03-31 - [React.memo and inline props anti-pattern]
+**Learning:** [In this codebase, deeply nested mapping operations pass inline default props like `student={s.student_data || {}}`. Wrapping components in React.memo is useless unless these default fallback props are hoisted out of the component and map loops, otherwise the inline `{}` creates a new memory reference, invalidating the memo cache on every render.]
+**Action:** [When memoizing heavily mapped components, always scan their props for inline object instantiations (`{}`, `[]`) or dynamic array generations and replace them with stable outer constants.]
