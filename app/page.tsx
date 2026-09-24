@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -42,6 +42,11 @@ type BackupRecord = {
   created_at?: string;
 };
 type AiDraftRow = { student_name: string; roll_no?: string; subjects: Record<string, { t1?: string; t2?: string; t3?: string }> };
+
+const DEFAULT_STUDENT_DATA = {};
+const DEFAULT_EXTRA_DATA = {};
+const DEFAULT_CO_SCHOLASTIC = {sports:'A',art:'A',music:'A',discipline:'A'};
+const DEFAULT_MARKS_DATA = {};
 
 export default function MarksheetApp() {
   // 🔒 LOCAL ACCESS PIN
@@ -422,7 +427,7 @@ export default function MarksheetApp() {
   };
 
   const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
-    const safeMObj = mObj || {};
+    const safeMObj = mObj || DEFAULT_MARKS_DATA;
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
     subs.forEach(sub => { gTotal += (Number(safeMObj[sub]?.t1)||0) + (Number(safeMObj[sub]?.t2)||0) + (Number(safeMObj[sub]?.t3)||0); });
@@ -1167,7 +1172,7 @@ export default function MarksheetApp() {
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
                 <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
+                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student || DEFAULT_STUDENT_DATA} marks={marks || DEFAULT_MARKS_DATA} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails || DEFAULT_EXTRA_DATA} coScholastic={coScholastic || DEFAULT_CO_SCHOLASTIC} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
                 </div>
               </div>
             </div>
@@ -1177,17 +1182,17 @@ export default function MarksheetApp() {
 
       <div id="print-single-container" className="print-area">
         <div className="marksheet-page">
-          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={student || DEFAULT_STUDENT_DATA} marks={marks || DEFAULT_MARKS_DATA} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails || DEFAULT_EXTRA_DATA} coScholastic={coScholastic || DEFAULT_CO_SCHOLASTIC} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
         </div>
       </div>
 
       <div id="print-bulk-container" className="print-area">
         {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
+          const safeMarks = s.marks_data || DEFAULT_MARKS_DATA;
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || DEFAULT_STUDENT_DATA} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || DEFAULT_EXTRA_DATA} coScholastic={s.extra_data?.coScholastic || DEFAULT_CO_SCHOLASTIC} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1201,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1211,7 +1216,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
   };
 
   const t = theme || THEMES.classic; 
-  const resolvedSubjects = (subjectsList && subjectsList.length > 0) ? subjectsList : Object.keys(marks || {});
+  const resolvedSubjects = (subjectsList && subjectsList.length > 0) ? subjectsList : Object.keys(marks || DEFAULT_MARKS_DATA);
 
   return (
     <div className={`w-[210mm] h-[295mm] bg-white relative overflow-hidden text-black text-sm box-border mx-auto p-2 ${t.ring} shadow-2xl print:shadow-none`}>
@@ -1349,4 +1354,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+})
