@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -11,6 +11,25 @@ const OFFLINE_MARKS_QUEUE_KEY = 'sbsOfflineMarksQueue';
 const LOCAL_BACKUP_RECORDS_KEY = 'sbsLocalBackupRecords';
 const OFFLINE_ONLY_MODE_KEY = 'sbsOfflineOnlyMode';
 const GEMINI_MODEL = 'gemini-2.5-flash';
+
+const getGrade = (marksObtained: number | string, maxMarks: number) => {
+  if (marksObtained === '') return '';
+  let p = (Number(marksObtained) / maxMarks) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
+};
+
+const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
+  const markKeys = Object.keys(mObj || {}).filter(Boolean);
+  if (markKeys.length === 0) return fallback;
+  return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
+};
+
+const defaultStudent = {};
+const defaultCoScholastic = {sports:'A',art:'A',music:'A',discipline:'A'};
+const defaultExtraData = {};
+const defaultMarksData = {};
+
 
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
@@ -140,13 +159,7 @@ export default function MarksheetApp() {
     });
   };
 
-  const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
-    const markKeys = Object.keys(mObj || {}).filter(Boolean);
-    if (markKeys.length === 0) return fallback;
-    return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
-  };
-
-  const getClassSubjects = (clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS);
+  const getClassSubjects = useCallback((clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS), [subjectConfig]);
   const currentSubjectsList = getClassSubjects(activeClass, marks);
 
   const showNotice = (message: string) => {
@@ -414,14 +427,7 @@ export default function MarksheetApp() {
     setActiveSubjectIdx(0);
   };
 
-  const getGrade = (marksObtained: number | string, maxMarks: number) => {
-    if (marksObtained === '') return '';
-    let p = (Number(marksObtained) / maxMarks) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
-  };
-
-  const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
+  const getCalculations = useCallback((mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
@@ -430,7 +436,7 @@ export default function MarksheetApp() {
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
     return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
-  };
+  }, [getClassSubjects]);
 
   const { grandTotal, percentage, finalGrade } = getCalculations(marks, activeClass);
 
@@ -446,7 +452,7 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  const getClassRank = (myTotal: number, clsName: string) => {
+  const getClassRank = useCallback((myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
@@ -454,7 +460,7 @@ export default function MarksheetApp() {
     allTotals.sort((a, b) => b - a); 
     const rank = allTotals.indexOf(myTotal) + 1;
     return rank > 0 ? `${rank}` : "";
-  };
+  }, [dbStudents]);
 
   const handleBackupImport = async (e: any) => {
     const file = e.target.files?.[0];
@@ -1182,27 +1188,24 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
+        {/* Wrapped in useMemo to prevent severe O(n) re-renders and input lag during unrelated state changes (e.g. typing) */}
+        {useMemo(() => classFilteredStudents.map((s, index) => {
+          const safeMarks = s.marks_data || defaultMarksData;
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudent} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtraData} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
-        })}
+        }), [classFilteredStudents, activeTheme, getCalculations, getClassSubjects, getClassRank, showTableWatermark])}
       </div>
     </>
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
-  const getGrade = (m: number | string, max: number) => {
-    if (m === '') return '';
-    let p = (Number(m) / max) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
-  };
+// Memoized to prevent heavy DOM recalculations when parent state changes.
+// Props heavily rely on static default objects to maintain shallow equality.
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
@@ -1349,4 +1352,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+});

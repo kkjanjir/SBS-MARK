@@ -1,0 +1,3 @@
+## 2024-05-18 - React.memo on heavily mapped elements with deep objects
+**Learning:** Returning new array/object instances inline in `map` calls (e.g. `student={s.student_data || {}}`) bypasses `React.memo`'s shallow equality check, causing every item to re-render when the parent component state changes. Also, computationally expensive loops like bulk print containers in hidden elements execute on every re-render and cause severe input lag.
+**Action:** Extract default props/fallbacks as static constants outside the component scope (e.g., `const defaultStudent = {}`), and aggressively memoize heavy computational mapping blocks (`useMemo(() => data.map(...), [...deps])`) alongside `React.memo()`.
