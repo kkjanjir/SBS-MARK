@@ -1,0 +1,3 @@
+## 2024-05-14 - Optimize MarksheetTemplate Rendering
+**Learning:** `MarksheetTemplate` is heavily used in mapping operations inside the bulk print container. It should be wrapped with `React.memo()` to prevent unnecessary heavy DOM recalculations during state changes. Props passed to `React.memo(MarksheetTemplate)` must maintain referential stability.
+**Action:** Wrap `MarksheetTemplate` with `React.memo()` and define static default objects outside the component scope to avoid breaking shallow equality on components like `MarksheetTemplate` when using inline fallbacks in props. Extract purely functional, non-state dependent helper functions like `getGrade` outside the component.

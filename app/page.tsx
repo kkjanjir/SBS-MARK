@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1183,11 +1183,11 @@ export default function MarksheetApp() {
 
       <div id="print-bulk-container" className="print-area">
         {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
+          const safeMarks = s.marks_data || defaultMarksData;
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudentData} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtraData} coScholastic={s.extra_data?.coScholastic || defaultCoScholasticData} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,19 +1196,29 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
-  const getGrade = (m: number | string, max: number) => {
-    if (m === '') return '';
-    let p = (Number(m) / max) * 100;
-    if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
-    if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
-  };
+const defaultStudentData = {};
+const defaultMarksData = {};
+const defaultExtraData = {};
+const defaultCoScholasticData = { sports: 'A', art: 'A', music: 'A', discipline: 'A' };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    const [year, month, day] = dateStr.split('-');
-    return `${day}-${month}-${year}`;
-  };
+const getGradeTemplate = (m: number | string, max: number) => {
+  if (m === '') return '';
+  let p = (Number(m) / max) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D'; return 'E';
+};
+
+const formatDateTemplate = (dateStr: string) => {
+  if (!dateStr) return "";
+  const [year, month, day] = dateStr.split('-');
+  return `${day}-${month}-${year}`;
+};
+
+
+// ⚡ Bolt Optimization:
+// Extracted default objects and helper functions outside the component scope to avoid breaking
+// shallow equality checks in React.memo by passing new object instances or recreating functions on every render.
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
 
   const t = theme || THEMES.classic; 
   const resolvedSubjects = (subjectsList && subjectsList.length > 0) ? subjectsList : Object.keys(marks || {});
@@ -1271,7 +1281,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
                       <td className={`border-r-[2px] ${t.border} p-1.5`}>60</td><td className={`border-r-[2px] ${t.border} p-1.5`}>{subData.t2}</td>
                       <td className={`border-r-[2px] ${t.border} p-1.5`}>100</td><td className={`border-r-[2px] ${t.border} p-1.5`}>{subData.t3}</td>
                       <td className={`border-r-[2px] ${t.border} p-1.5`}>200</td><td className={`border-r-[2px] ${t.border} p-1.5 text-black`}>{tot > 0 ? tot : ''}</td>
-                      <td className={`p-1.5 ${t.text}`}>{tot > 0 ? getGrade(tot, 200) : ''}</td>
+                      <td className={`p-1.5 ${t.text}`}>{tot > 0 ? getGradeTemplate(tot, 200) : ''}</td>
                     </tr>
                   )
                 })}
@@ -1332,7 +1342,7 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
 
           <div className="flex justify-between items-end px-8 pt-1 pb-1 font-semibold text-sm mt-auto">
             <div className="flex flex-col items-center pt-1 w-32">
-              <span className="font-bold mb-1">{formatDate(extra?.issueDate)}</span>
+              <span className="font-bold mb-1">{formatDateTemplate(extra?.issueDate)}</span>
               <div className="border-t border-dashed border-black w-full text-center pt-1">Date of Issue</div>
             </div>
             <div className="flex flex-col items-center">
@@ -1349,4 +1359,26 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparator to handle arrays like subjectsList which might be recreated
+  if (prevProps.subjectsList?.length !== nextProps.subjectsList?.length) return false;
+  if (prevProps.subjectsList && nextProps.subjectsList) {
+    for (let i = 0; i < prevProps.subjectsList.length; i++) {
+      if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+    }
+  }
+  return (
+    prevProps.theme === nextProps.theme &&
+    prevProps.student === nextProps.student &&
+    prevProps.marks === nextProps.marks &&
+    prevProps.grandTotal === nextProps.grandTotal &&
+    prevProps.percentage === nextProps.percentage &&
+    prevProps.finalGrade === nextProps.finalGrade &&
+    prevProps.extra === nextProps.extra &&
+    prevProps.coScholastic === nextProps.coScholastic &&
+    prevProps.photo === nextProps.photo &&
+    prevProps.rank === nextProps.rank &&
+    prevProps.activeClass === nextProps.activeClass &&
+    prevProps.showTableWatermark === nextProps.showTableWatermark
+  );
+});
