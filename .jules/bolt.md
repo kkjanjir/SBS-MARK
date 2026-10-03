@@ -1,0 +1,3 @@
+## 2024-05-24 - [Memoizing Heavy React Components with Inline Object Fallbacks]
+**Learning:** In Next.js applications where complex components like `MarksheetTemplate` are heavily mapped, inline fallback objects inside JSX props (e.g., `student={data || {}}`) create new object references on every render, defeating `React.memo()`'s shallow comparison.
+**Action:** Define static default fallback objects (like `defaultStudent = {}`) outside the component scope and pass those instead, combined with custom `arePropsEqual` comparators for derived arrays, to ensure strict referential stability across re-renders.
