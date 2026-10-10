@@ -1,0 +1,3 @@
+## 2025-02-12 - MarksheetTemplate Memoization
+**Learning:** Heavy mapped components like `MarksheetTemplate` bypass `React.memo` benefits when inline object fallbacks (`|| {}`) and dynamically created arrays (`subjectsList`) constantly break shallow equality. Large map iterations for printing need top-level `useMemo` to prevent UI lag.
+**Action:** Extracted static fallbacks (`DEFAULT_STUDENT`, `DEFAULT_CO_SCHOLASTIC`) outside component scope to maintain referential identity, wrapped the template in `React.memo` with a custom `arePropsEqual` for array checks, and memoized the entire bulk print iteration at the top level of the parent component.
