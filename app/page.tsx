@@ -1,7 +1,12 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
+
+const DEFAULT_STUDENT = {};
+const DEFAULT_EXTRA = {};
+const DEFAULT_CO_SCHOLASTIC = { sports: 'A', art: 'A', music: 'A', discipline: 'A' };
+const DEFAULT_MARKS = {};
 
 // 🚀 SUPABASE CONNECTION
 const supabaseUrl = 'https://jrvsjjzmkpkwmhbcohyq.supabase.co/';
@@ -757,6 +762,18 @@ export default function MarksheetApp() {
 
   const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
+  const bulkPrintContent = useMemo(() => {
+    return classFilteredStudents.map((s, index) => {
+      const safeMarks = s.marks_data || DEFAULT_MARKS;
+      const calcs = getCalculations(safeMarks, s.class_name);
+      return (
+        <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+          <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || DEFAULT_STUDENT} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || DEFAULT_EXTRA} coScholastic={s.extra_data?.coScholastic || DEFAULT_CO_SCHOLASTIC} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+        </div>
+      )
+    });
+  }, [classFilteredStudents, activeTheme, activeClass, showTableWatermark, subjectConfig]);
+
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
@@ -1182,21 +1199,13 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
-          const calcs = getCalculations(safeMarks, s.class_name);
-          return (
-            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
-            </div>
-          )
-        })}
+        {bulkPrintContent}
       </div>
     </>
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1358,21 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, (prev, next) => {
+  if (prev.subjectsList?.length !== next.subjectsList?.length) return false;
+  for (let i = 0; i < (prev.subjectsList?.length || 0); i++) {
+    if (prev.subjectsList[i] !== next.subjectsList[i]) return false;
+  }
+  return prev.student === next.student &&
+         prev.marks === next.marks &&
+         prev.grandTotal === next.grandTotal &&
+         prev.percentage === next.percentage &&
+         prev.finalGrade === next.finalGrade &&
+         prev.extra === next.extra &&
+         prev.coScholastic === next.coScholastic &&
+         prev.photo === next.photo &&
+         prev.rank === next.rank &&
+         prev.activeClass === next.activeClass &&
+         prev.showTableWatermark === next.showTableWatermark &&
+         prev.theme?.id === next.theme?.id;
+});
