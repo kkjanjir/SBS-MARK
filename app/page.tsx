@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1187,7 +1187,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudent} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtra} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1196,12 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+
+const defaultStudent = {};
+const defaultExtra = {};
+const defaultCoScholastic = {sports:'A',art:'A',music:'A',discipline:'A'};
+
+const MarksheetTemplateBase = ({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) => {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1350,3 +1355,36 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     </div>
   )
 }
+
+
+
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+  if (prevProps.grandTotal !== nextProps.grandTotal) return false;
+  if (prevProps.percentage !== nextProps.percentage) return false;
+  if (prevProps.finalGrade !== nextProps.finalGrade) return false;
+  if (prevProps.rank !== nextProps.rank) return false;
+  if (prevProps.activeClass !== nextProps.activeClass) return false;
+  if (prevProps.showTableWatermark !== nextProps.showTableWatermark) return false;
+  if (prevProps.photo !== nextProps.photo) return false;
+  if (prevProps.theme?.id !== nextProps.theme?.id) return false;
+
+  if (prevProps.student !== nextProps.student) {
+    if (prevProps.student?.name !== nextProps.student?.name) return false;
+    if (prevProps.student?.roll !== nextProps.student?.roll) return false;
+  }
+  if (prevProps.subjectsList?.join(',') !== nextProps.subjectsList?.join(',')) return false;
+
+  // Compare marks shallowly
+  const pMarksKeys = Object.keys(prevProps.marks || {});
+  const nMarksKeys = Object.keys(nextProps.marks || {});
+  if (pMarksKeys.length !== nMarksKeys.length) return false;
+  for (let k of pMarksKeys) {
+    if (prevProps.marks[k]?.t1 !== nextProps.marks[k]?.t1) return false;
+    if (prevProps.marks[k]?.t2 !== nextProps.marks[k]?.t2) return false;
+    if (prevProps.marks[k]?.t3 !== nextProps.marks[k]?.t3) return false;
+  }
+
+  return true;
+};
+
+const MarksheetTemplate = React.memo(MarksheetTemplateBase, arePropsEqual);
