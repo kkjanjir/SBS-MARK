@@ -1,0 +1,3 @@
+## 2024-03-24 - React.memo on heavily rendered components
+**Learning:** `MarksheetTemplate` is heavily rendered in mapping operations like the bulk print container. Wrapping it in `React.memo` is critical to prevent O(N) re-renders, but inline static defaults in props (e.g. `student={data || {}}`) can break shallow comparison.
+**Action:** Use `React.memo(MarksheetTemplate)` with static default object defined outside the component scope, or use a custom comparator `arePropsEqual` if array equality must be managed, avoiding `JSON.stringify` which is a performance killer. Ensure `student`, `marks`, `extra`, and `coScholastic` have referentially stable default props.
