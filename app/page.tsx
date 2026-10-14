@@ -1196,7 +1196,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1349,44 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
+}, areMarksheetPropsEqual);
+
+function areMarksheetPropsEqual(prev: any, next: any) {
+  if (prev.theme?.id !== next.theme?.id) return false;
+  if (prev.activeClass !== next.activeClass) return false;
+  if (prev.grandTotal !== next.grandTotal) return false;
+  if (prev.percentage !== next.percentage) return false;
+  if (prev.finalGrade !== next.finalGrade) return false;
+  if (prev.rank !== next.rank) return false;
+  if (prev.photo !== next.photo) return false;
+  if (prev.showTableWatermark !== next.showTableWatermark) return false;
+
+  const s1 = prev.student || {};
+  const s2 = next.student || {};
+  if (s1.name !== s2.name || s1.roll !== s2.roll || s1.mother !== s2.mother || s1.father !== s2.father || s1.gender !== s2.gender) return false;
+
+  const e1 = prev.extra || {};
+  const e2 = next.extra || {};
+  if (e1.remark !== e2.remark || e1.attendance !== e2.attendance || e1.issueDate !== e2.issueDate) return false;
+
+  const c1 = prev.coScholastic || {};
+  const c2 = next.coScholastic || {};
+  if (c1.sports !== c2.sports || c1.art !== c2.art || c1.music !== c2.music || c1.discipline !== c2.discipline) return false;
+
+  const m1 = prev.marks || {};
+  const m2 = next.marks || {};
+  const mKeys = Object.keys(m2);
+  if (Object.keys(m1).length !== mKeys.length) return false;
+  for (let k of mKeys) {
+    if (m1[k]?.t1 !== m2[k]?.t1 || m1[k]?.t2 !== m2[k]?.t2 || m1[k]?.t3 !== m2[k]?.t3) return false;
+  }
+
+  const l1 = prev.subjectsList || [];
+  const l2 = next.subjectsList || [];
+  if (l1.length !== l2.length) return false;
+  for (let i=0; i<l1.length; i++) {
+    if (l1[i] !== l2[i]) return false;
+  }
+
+  return true;
 }
