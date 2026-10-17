@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, {  useState, useEffect  } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -24,6 +24,12 @@ const THEMES = {
   ocean: { id: 'ocean', name: 'Ocean Blue', border: 'border-blue-700', text: 'text-blue-700', bg: 'bg-blue-700', textSecondary: 'text-gray-800', bgHeader: 'bg-blue-100', bgHighlight: 'bg-indigo-50', ring: 'ring-blue-700' },
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
 };
+
+
+// 🚀 Default objects to maintain referential equality for React.memo
+const defaultStudentData = {};
+const defaultExtraData = {};
+const defaultCoScholasticData = { sports: 'A', art: 'A', music: 'A', discipline: 'A' };
 
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
@@ -1167,7 +1173,7 @@ export default function MarksheetApp() {
               <div className="w-full lg:w-[55%] bg-gray-800 lg:p-6 flex justify-center overflow-auto relative">
                 <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md">Live Preview</div>
                 <div className="lg:origin-top lg:scale-[0.70] xl:scale-[0.80] transition-transform">
-                  <MarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
+                  <MemoizedMarksheetTemplate templateId="marksheet-preview" theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
                 </div>
               </div>
             </div>
@@ -1177,7 +1183,7 @@ export default function MarksheetApp() {
 
       <div id="print-single-container" className="print-area">
         <div className="marksheet-page">
-          <MarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
+          <MemoizedMarksheetTemplate theme={THEMES[activeTheme]} student={student} marks={marks} subjectsList={currentSubjectsList} grandTotal={grandTotal} percentage={percentage} finalGrade={finalGrade} extra={extraDetails} coScholastic={coScholastic} photo={studentPhoto} rank={getClassRank(grandTotal, activeClass)} activeClass={activeClass} showTableWatermark={showTableWatermark} />
         </div>
       </div>
 
@@ -1187,7 +1193,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MemoizedMarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudentData} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtraData} coScholastic={s.extra_data?.coScholastic || defaultCoScholasticData} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1350,3 +1356,33 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
     </div>
   )
 }
+
+
+
+// ⚡ Bolt Performance Optimization: Custom equality check for MarksheetTemplate
+// Prevents unnecessary re-renders in the bulk print container by accurately comparing complex props
+const areMarksheetPropsEqual = (prevProps: any, nextProps: any) => {
+  if (prevProps.activeClass !== nextProps.activeClass) return false;
+  if (prevProps.grandTotal !== nextProps.grandTotal) return false;
+  if (prevProps.percentage !== nextProps.percentage) return false;
+  if (prevProps.finalGrade !== nextProps.finalGrade) return false;
+  if (prevProps.rank !== nextProps.rank) return false;
+  if (prevProps.showTableWatermark !== nextProps.showTableWatermark) return false;
+  if (prevProps.photo !== nextProps.photo) return false;
+  if (prevProps.theme?.id !== nextProps.theme?.id) return false;
+
+  if (prevProps.subjectsList.length !== nextProps.subjectsList.length) return false;
+  for (let i = 0; i < prevProps.subjectsList.length; i++) {
+    if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+  }
+
+  if (prevProps.student !== nextProps.student) return false;
+
+  if (prevProps.marks !== nextProps.marks) return false;
+  if (prevProps.extra !== nextProps.extra) return false;
+  if (prevProps.coScholastic !== nextProps.coScholastic) return false;
+
+  return true;
+};
+
+const MemoizedMarksheetTemplate = React.memo(MarksheetTemplate, areMarksheetPropsEqual);

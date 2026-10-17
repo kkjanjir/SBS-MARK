@@ -1,0 +1,3 @@
+## 2024-05-19 - React.memo Optimization with Strict Custom Comparator
+**Learning:** `React.memo` using shallow equality check might easily be defeated when a component is heavily rendered with derived objects/arrays via maps (e.g. `MarksheetTemplate` mapped through students for bulk print). Default values for object properties shouldn't be defined inline inside the props because it generates new instances in each render and defeats `React.memo` (e.g., `student={data || {}}`).
+**Action:** Extract inline default objects to static constants outside component scope. Implement `React.memo` with a custom comparator that specifically checks relevant scalar attributes of complex objects rather than deep comparing or falling back to shallow equality that triggers re-renders.
