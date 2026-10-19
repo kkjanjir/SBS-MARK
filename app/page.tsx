@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,6 +15,26 @@ const GEMINI_MODEL = 'gemini-2.5-flash';
 // ❌ Computer removed from default subjects
 const DEFAULT_SUBJECTS = ['HINDI', 'ENGLISH', 'MATHEMATICS', 'SCIENCE', 'SOCIAL SCIENCE', 'ART AND DRAWING', 'G.K.'];
 const remarksList = ["Excellent performance, keep it up!", "Good effort, can do better in Science.", "Needs to focus more on studies.", "Outstanding participation in class."];
+
+// ⚡ Bolt Performance Optimizations: Static Reference Objects
+const defaultStudent = {};
+const defaultExtra = {};
+const defaultCoScholastic = { sports: "A", art: "A", music: "A", discipline: "A" };
+const defaultMarksData = {};
+
+// ⚡ Bolt Performance Optimizations: Extracted Pure Functions
+const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
+  const markKeys = Object.keys(mObj || {}).filter(Boolean);
+  if (markKeys.length === 0) return fallback;
+  return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
+};
+
+const getGrade = (marksObtained: number | string, maxMarks: number) => {
+  if (marksObtained === '') return '';
+  let p = (Number(marksObtained) / maxMarks) * 100;
+  if (p >= 91) return 'A1'; if (p >= 81) return 'A2'; if (p >= 71) return 'B1'; if (p >= 61) return 'B2';
+  if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
+};
 
 // 🎨 5 PREMIUM THEMES
 const THEMES = {
@@ -140,14 +160,13 @@ export default function MarksheetApp() {
     });
   };
 
-  const getDynamicSubjects = (mObj: MarksState | null | undefined, fallback: string[]) => {
-    const markKeys = Object.keys(mObj || {}).filter(Boolean);
-    if (markKeys.length === 0) return fallback;
-    return [...fallback.filter(sub => markKeys.includes(sub)), ...markKeys.filter(sub => !fallback.includes(sub))];
-  };
+  const getClassSubjects = useCallback((clsName: string, mObj?: MarksState) =>
+    getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS),
+  [subjectConfig]);
 
-  const getClassSubjects = (clsName: string, mObj?: MarksState) => getDynamicSubjects(mObj, subjectConfig[clsName] || DEFAULT_SUBJECTS);
-  const currentSubjectsList = getClassSubjects(activeClass, marks);
+  const currentSubjectsList = useMemo(() =>
+    getClassSubjects(activeClass, marks),
+  [getClassSubjects, activeClass, marks]);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -421,7 +440,7 @@ export default function MarksheetApp() {
     if (p >= 51) return 'C1'; if (p >= 41) return 'C2'; if (p >= 33) return 'D';  return 'E';
   };
 
-  const getCalculations = (mObj: MarksState | undefined | null, clsName: string) => {
+  const getCalculations = useCallback((mObj: MarksState | undefined | null, clsName: string) => {
     const safeMObj = mObj || {};
     const subs = getClassSubjects(clsName, safeMObj);
     let gTotal = 0;
@@ -430,9 +449,9 @@ export default function MarksheetApp() {
     const perc = gTotal > 0 ? ((gTotal / mMax) * 100).toFixed(1) : "0";
     const fGrade = gTotal > 0 ? getGrade(gTotal, mMax) : "";
     return { grandTotal: gTotal, percentage: perc, finalGrade: fGrade, maxMarks: mMax };
-  };
+  }, [getClassSubjects]);
 
-  const { grandTotal, percentage, finalGrade } = getCalculations(marks, activeClass);
+  const { grandTotal, percentage, finalGrade } = useMemo(() => getCalculations(marks, activeClass), [getCalculations, marks, activeClass]);
 
   useEffect(() => {
     if (step === 5 && !extraDetails.remark && finalGrade) {
@@ -446,7 +465,7 @@ export default function MarksheetApp() {
     }
   }, [step, finalGrade]);
 
-  const getClassRank = (myTotal: number, clsName: string) => {
+  const getClassRank = useCallback((myTotal: number, clsName: string) => {
     if (myTotal === 0) return "";
     const classStudents = dbStudents.filter(s => s.class_name === clsName);
     let allTotals = classStudents.map(s => s.extra_data?.total || 0);
@@ -454,7 +473,7 @@ export default function MarksheetApp() {
     allTotals.sort((a, b) => b - a); 
     const rank = allTotals.indexOf(myTotal) + 1;
     return rank > 0 ? `${rank}` : "";
-  };
+  }, [dbStudents]);
 
   const handleBackupImport = async (e: any) => {
     const file = e.target.files?.[0];
@@ -720,6 +739,37 @@ export default function MarksheetApp() {
   const activeMaxVal = step === 2 ? 40 : step === 3 ? 60 : 100;
   const currentSub = currentSubjectsList[activeSubjectIdx] || '';
 
+  const classFilteredStudents = useMemo(() =>
+    dbStudents.filter(s => s.class_name === activeClass),
+  [dbStudents, activeClass]);
+
+  // ⚡ Bolt Optimization: Memoize complex print container to avoid O(N) re-renders
+  const bulkPrintMarksheets = useMemo(() => {
+    return classFilteredStudents.map((s, index) => {
+      const safeMarks = s.marks_data || defaultMarksData;
+      const calcs = getCalculations(safeMarks, s.class_name);
+      return (
+        <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
+          <MarksheetTemplate
+            theme={THEMES[activeTheme]}
+            student={s.student_data || defaultStudent}
+            marks={safeMarks}
+            subjectsList={getClassSubjects(s.class_name, safeMarks)}
+            grandTotal={calcs.grandTotal}
+            percentage={calcs.percentage}
+            finalGrade={calcs.finalGrade}
+            extra={s.extra_data || defaultExtra}
+            coScholastic={s.extra_data?.coScholastic || defaultCoScholastic}
+            photo={s.student_data?.photo}
+            rank={getClassRank(calcs.grandTotal, s.class_name)}
+            activeClass={s.class_name}
+            showTableWatermark={showTableWatermark}
+          />
+        </div>
+      )
+    });
+  }, [classFilteredStudents, activeTheme, showTableWatermark, getClassSubjects, getCalculations, getClassRank]);
+
   // ==========================================
   // VIEW 1: SIMPLE PIN SCREEN 🔒
   // ==========================================
@@ -754,8 +804,6 @@ export default function MarksheetApp() {
       </div>
     );
   }
-
-  const classFilteredStudents = dbStudents.filter(s => s.class_name === activeClass);
 
   return (
     <>
@@ -1182,21 +1230,14 @@ export default function MarksheetApp() {
       </div>
 
       <div id="print-bulk-container" className="print-area">
-        {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
-          const calcs = getCalculations(safeMarks, s.class_name);
-          return (
-            <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
-            </div>
-          )
-        })}
+        {bulkPrintMarksheets}
       </div>
     </>
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+// ⚡ Bolt Optimization: Memoize the heavily reused MarksheetTemplate
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1390,25 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  if (prevProps.theme !== nextProps.theme) return false;
+  if (prevProps.student !== nextProps.student) return false;
+  if (prevProps.marks !== nextProps.marks) return false;
+
+  if (prevProps.subjectsList?.length !== nextProps.subjectsList?.length) return false;
+  for (let i = 0; i < (prevProps.subjectsList?.length || 0); i++) {
+    if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+  }
+
+  if (prevProps.grandTotal !== nextProps.grandTotal) return false;
+  if (prevProps.percentage !== nextProps.percentage) return false;
+  if (prevProps.finalGrade !== nextProps.finalGrade) return false;
+  if (prevProps.extra !== nextProps.extra) return false;
+  if (prevProps.coScholastic !== nextProps.coScholastic) return false;
+  if (prevProps.photo !== nextProps.photo) return false;
+  if (prevProps.rank !== nextProps.rank) return false;
+  if (prevProps.activeClass !== nextProps.activeClass) return false;
+  if (prevProps.showTableWatermark !== nextProps.showTableWatermark) return false;
+
+  return true;
+});
