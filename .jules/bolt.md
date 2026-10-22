@@ -1,0 +1,3 @@
+## 2025-02-12 - Prevent Re-renders in Bulk Maps with React.memo and Static Defaults
+**Learning:** Inline fallbacks like `student={data || {}}` in large mapped lists continuously break `React.memo` shallow equality, triggering severe O(N) re-renders for unchanged components like `MarksheetTemplate`. Additionally, continuously recreated arrays (like `subjectsList`) bypass standard memoization.
+**Action:** Always extract default static objects (e.g., `const DEFAULT_STUDENT = {}`) outside the component scope and use a custom `arePropsEqual` comparator to manually evaluate array equalities when optimizing heavy list renderings.
