@@ -1,0 +1,3 @@
+## 2024-05-29 - React.memo vs New Arrays
+**Learning:** `MarksheetTemplate` is heavily used in a map block (`print-bulk-container`). We are passing `getClassSubjects(...)` as the `subjectsList` prop. `getClassSubjects` returns a newly created array on every call, defeating standard shallow `React.memo` unless we provide a custom equality function. Even if we use `useCallback` on `getClassSubjects`, the returned array is a new reference. So for `React.memo` to be effective on `MarksheetTemplate`, we need a custom equality function that checks array contents, or we must memoize the array.
+**Action:** Implement `React.memo` with a custom `arePropsEqual` on `MarksheetTemplate` to prevent heavy DOM re-renders during state changes.
