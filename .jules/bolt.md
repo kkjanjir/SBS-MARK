@@ -1,0 +1,3 @@
+## 2024-05-19 - [Memoize MarksheetTemplate component]
+**Learning:** The `MarksheetTemplate` component is heavily used in mapping operations (inside the `print-bulk-container`) and doesn't use `React.memo()`. This can cause unnecessary heavy DOM recalculations during state changes, since `MarksheetTemplate` re-renders for every student whenever any state in the parent `MarksheetApp` changes.
+**Action:** Wrap `MarksheetTemplate` with `React.memo` to optimize rendering. To make `React.memo` work correctly, we should define static default props (e.g. `defaultStudent`, `defaultCoScholastic`, `defaultMarksData`) outside the component scope to avoid passing inline objects/arrays (e.g. `{sports:'A',art:'A',music:'A',discipline:'A'}`) which bypass shallow comparison.
