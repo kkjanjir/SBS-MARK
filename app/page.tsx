@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1196,7 +1196,34 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+
+// ⚡ Bolt: Custom comparator for React.memo to prevent unnecessary re-renders when parent renders.
+// This is critical since subjectsList array is generated dynamically and fails shallow comparison.
+function arePropsEqual(prevProps: any, nextProps: any) {
+  return (
+    prevProps.theme?.id === nextProps.theme?.id &&
+    prevProps.student === nextProps.student &&
+    prevProps.marks === nextProps.marks &&
+    prevProps.subjectsList.length === nextProps.subjectsList.length &&
+    prevProps.subjectsList.every((val: any, index: number) => val === nextProps.subjectsList[index]) &&
+    prevProps.grandTotal === nextProps.grandTotal &&
+    prevProps.percentage === nextProps.percentage &&
+    prevProps.finalGrade === nextProps.finalGrade &&
+    prevProps.extra === nextProps.extra &&
+    prevProps.coScholastic?.sports === nextProps.coScholastic?.sports &&
+    prevProps.coScholastic?.art === nextProps.coScholastic?.art &&
+    prevProps.coScholastic?.music === nextProps.coScholastic?.music &&
+    prevProps.coScholastic?.discipline === nextProps.coScholastic?.discipline &&
+    prevProps.photo === nextProps.photo &&
+    prevProps.rank === nextProps.rank &&
+    prevProps.activeClass === nextProps.activeClass &&
+    prevProps.showTableWatermark === nextProps.showTableWatermark
+  );
+}
+
+// ⚡ Bolt: Wrapped with React.memo to optimize bulk printing performance.
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1376,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, arePropsEqual);

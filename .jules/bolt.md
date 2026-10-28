@@ -1,0 +1,3 @@
+## 2024-05-24 - React.memo on MarksheetTemplate array dependency
+**Learning:** Found that `MarksheetTemplate` component is heavily used in a map block (`print-bulk-container`) in `app/page.tsx` and was re-rendering excessively. Even with `React.memo`, dynamically generated arrays passed as props (e.g., `subjectsList={getClassSubjects(...)}`) defeat shallow comparison.
+**Action:** Always implement a custom `arePropsEqual` comparator when wrapping heavily-mapped components in `React.memo()` if their props include dynamically generated arrays or objects from the parent render cycle. Ensure optional chaining is used in the comparator to prevent null-reference errors.
