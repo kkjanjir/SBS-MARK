@@ -1,0 +1,3 @@
+## 2025-05-18 - [Optimizing Heavy Render List with React.memo and Custom Comparator]
+**Learning:** Returning new array instances from helper functions (like `getClassSubjects`) inside a mapping operation defeats `React.memo`'s shallow equality check, causing deep DOM recalculations. In addition, using inline fallbacks like `|| {}` breaks referential stability for props.
+**Action:** Extract static default objects (e.g., `defaultStudent`, `defaultExtra`, `defaultCoScholastic`) outside the component scope to preserve referential equality, and use a custom `arePropsEqual` comparator passed to `React.memo` to properly handle array equality for dynamically generated arrays without breaking optimization.
