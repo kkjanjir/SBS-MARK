@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1196,7 +1196,30 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+// Custom comparator for MarksheetTemplate
+// Optimization: Prevents unnecessary heavy DOM recalculations and re-renders during state changes.
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+  if (prevProps.subjectsList?.length !== nextProps.subjectsList?.length) return false;
+  for (let i = 0; i < (prevProps.subjectsList?.length || 0); i++) {
+    if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+  }
+  return (
+    prevProps.theme === nextProps.theme &&
+    prevProps.student === nextProps.student &&
+    prevProps.grandTotal === nextProps.grandTotal &&
+    prevProps.percentage === nextProps.percentage &&
+    prevProps.finalGrade === nextProps.finalGrade &&
+    prevProps.rank === nextProps.rank &&
+    prevProps.activeClass === nextProps.activeClass &&
+    prevProps.showTableWatermark === nextProps.showTableWatermark &&
+    prevProps.photo === nextProps.photo &&
+    prevProps.extra === nextProps.extra &&
+    prevProps.coScholastic === nextProps.coScholastic &&
+    prevProps.marks === nextProps.marks
+  );
+};
+
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1372,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, arePropsEqual);
