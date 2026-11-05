@@ -1,0 +1,3 @@
+## 2024-05-19 - [Performance Opportunity: MarksheetTemplate Re-renders]
+**Learning:** The MarksheetTemplate component in `app/page.tsx` is unmemoized and very complex (renders a full table for marks, co-scholastics, calculated grades, themes, etc.). Every time a user types in a generic input (like search or any extra detail in the parent component), MarksheetTemplate re-renders unnecessarily if `activeClass`, etc change, or when it's rendered multiple times in bulk print. Given it renders heavily, wrapping it in `React.memo` is a key performance bottleneck fix.
+**Action:** Use `React.memo` with a custom `arePropsEqual` comparator for the `MarksheetTemplate` component to prevent unnecessary re-renders.
