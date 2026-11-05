@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -1196,7 +1196,9 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+// ⚡ BOLT OPTIMIZATION: Wrapped MarksheetTemplate in React.memo to prevent unnecessary re-renders during search, typing, and bulk prints.
+// Custom comparator handles array recreation issues (subjectsList).
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1351,31 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  if (
+    prevProps.grandTotal !== nextProps.grandTotal ||
+    prevProps.percentage !== nextProps.percentage ||
+    prevProps.finalGrade !== nextProps.finalGrade ||
+    prevProps.photo !== nextProps.photo ||
+    prevProps.rank !== nextProps.rank ||
+    prevProps.activeClass !== nextProps.activeClass ||
+    prevProps.showTableWatermark !== nextProps.showTableWatermark ||
+    prevProps.theme?.id !== nextProps.theme?.id
+  ) {
+    return false;
+  }
+
+  if (prevProps.subjectsList !== nextProps.subjectsList) {
+    if (!prevProps.subjectsList || !nextProps.subjectsList || prevProps.subjectsList.length !== nextProps.subjectsList.length) return false;
+    for (let i = 0; i < prevProps.subjectsList.length; i++) {
+      if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+    }
+  }
+
+  if (prevProps.student !== nextProps.student) return false;
+  if (prevProps.extra !== nextProps.extra) return false;
+  if (prevProps.coScholastic !== nextProps.coScholastic) return false;
+  if (prevProps.marks !== nextProps.marks) return false;
+
+  return true;
+});
