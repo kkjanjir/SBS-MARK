@@ -1,4 +1,5 @@
 'use client'
+import React from 'react';
 import { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
@@ -24,6 +25,10 @@ const THEMES = {
   ocean: { id: 'ocean', name: 'Ocean Blue', border: 'border-blue-700', text: 'text-blue-700', bg: 'bg-blue-700', textSecondary: 'text-gray-800', bgHeader: 'bg-blue-100', bgHighlight: 'bg-indigo-50', ring: 'ring-blue-700' },
   sunset: { id: 'sunset', name: 'Sunset Orange', border: 'border-orange-600', text: 'text-orange-600', bg: 'bg-orange-600', textSecondary: 'text-stone-800', bgHeader: 'bg-orange-100', bgHighlight: 'bg-yellow-50', ring: 'ring-orange-600' }
 };
+
+const defaultCoScholastic = {sports:'A',art:'A',music:'A',discipline:'A'};
+const defaultStudentData = {};
+const defaultExtraData = {};
 
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
@@ -1187,7 +1192,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudentData} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtraData} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1201,7 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const MarksheetTemplateComponent = ({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) => {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1354,31 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+};
+
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+  if (
+    prevProps.theme !== nextProps.theme ||
+    prevProps.student !== nextProps.student ||
+    prevProps.marks !== nextProps.marks ||
+    prevProps.grandTotal !== nextProps.grandTotal ||
+    prevProps.percentage !== nextProps.percentage ||
+    prevProps.finalGrade !== nextProps.finalGrade ||
+    prevProps.extra !== nextProps.extra ||
+    prevProps.coScholastic !== nextProps.coScholastic ||
+    prevProps.photo !== nextProps.photo ||
+    prevProps.rank !== nextProps.rank ||
+    prevProps.activeClass !== nextProps.activeClass ||
+    prevProps.showTableWatermark !== nextProps.showTableWatermark
+  ) {
+    return false;
+  }
+
+  if (prevProps.subjectsList.length !== nextProps.subjectsList.length) return false;
+  for (let i = 0; i < prevProps.subjectsList.length; i++) {
+    if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+  }
+  return true;
+};
+
+const MarksheetTemplate = React.memo(MarksheetTemplateComponent, arePropsEqual);
