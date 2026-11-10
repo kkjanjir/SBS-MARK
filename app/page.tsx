@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -42,6 +42,10 @@ type BackupRecord = {
   created_at?: string;
 };
 type AiDraftRow = { student_name: string; roll_no?: string; subjects: Record<string, { t1?: string; t2?: string; t3?: string }> };
+
+const defaultStudent = {};
+const defaultExtra = {};
+const defaultCoScholastic = {sports:'A',art:'A',music:'A',discipline:'A'};
 
 export default function MarksheetApp() {
   // 🔒 LOCAL ACCESS PIN
@@ -1187,7 +1191,7 @@ export default function MarksheetApp() {
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudent} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtra} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1200,29 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+const arePropsEqual = (prevProps: any, nextProps: any) => {
+  if (prevProps.theme?.id !== nextProps.theme?.id) return false;
+  if (prevProps.student !== nextProps.student) return false;
+  if (prevProps.marks !== nextProps.marks) return false;
+  if (prevProps.grandTotal !== nextProps.grandTotal) return false;
+  if (prevProps.percentage !== nextProps.percentage) return false;
+  if (prevProps.finalGrade !== nextProps.finalGrade) return false;
+  if (prevProps.extra !== nextProps.extra) return false;
+  if (prevProps.coScholastic !== nextProps.coScholastic) return false;
+  if (prevProps.photo !== nextProps.photo) return false;
+  if (prevProps.rank !== nextProps.rank) return false;
+  if (prevProps.activeClass !== nextProps.activeClass) return false;
+  if (prevProps.showTableWatermark !== nextProps.showTableWatermark) return false;
+  if (prevProps.subjectsList?.length !== nextProps.subjectsList?.length) return false;
+  if (prevProps.subjectsList) {
+    for (let i = 0; i < prevProps.subjectsList.length; i++) {
+      if (prevProps.subjectsList[i] !== nextProps.subjectsList[i]) return false;
+    }
+  }
+  return true;
+};
+
+const MarksheetTemplate = React.memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1375,4 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
-}
+}, arePropsEqual)
