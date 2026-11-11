@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Search, Plus, ChevronRight, ChevronLeft, Printer, Home, Save, Loader2, Folder, Image as ImageIcon, Settings, X, Trash2, DownloadCloud, Palette, User as UserIcon, LogOut, WifiOff, ArrowUp, ArrowDown, Bot, Send, Mic, MicOff } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -27,6 +27,11 @@ const THEMES = {
 
 const currentYear = new Date().getFullYear();
 const defaultIssue = new Date().getMonth() > 3 ? `${currentYear + 1}-03-31` : `${currentYear}-03-31`;
+
+const defaultStudent = {};
+const defaultExtra = {};
+const defaultCoScholastic = { sports: 'A', art: 'A', music: 'A', discipline: 'A' };
+const defaultMarksData = {};
 
 type MarksState = Record<string, { t1: string; t2: string; t3: string }>;
 type CoScholasticState = { sports: string; art: string; music: string; discipline: string };
@@ -1183,11 +1188,11 @@ export default function MarksheetApp() {
 
       <div id="print-bulk-container" className="print-area">
         {classFilteredStudents.map((s, index) => {
-          const safeMarks = s.marks_data || {};
+          const safeMarks = s.marks_data || defaultMarksData;
           const calcs = getCalculations(safeMarks, s.class_name);
           return (
             <div key={s.id} className="marksheet-page" style={{ pageBreakAfter: index === classFilteredStudents.length - 1 ? 'auto' : 'always' }}>
-              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || {}} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || {}} coScholastic={s.extra_data?.coScholastic || {sports:'A',art:'A',music:'A',discipline:'A'}} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
+              <MarksheetTemplate theme={THEMES[activeTheme]} student={s.student_data || defaultStudent} marks={safeMarks} subjectsList={getClassSubjects(s.class_name, safeMarks)} grandTotal={calcs.grandTotal} percentage={calcs.percentage} finalGrade={calcs.finalGrade} extra={s.extra_data || defaultExtra} coScholastic={s.extra_data?.coScholastic || defaultCoScholastic} photo={s.student_data?.photo} rank={getClassRank(calcs.grandTotal, s.class_name)} activeClass={s.class_name} showTableWatermark={showTableWatermark} />
             </div>
           )
         })}
@@ -1196,7 +1201,10 @@ export default function MarksheetApp() {
   )
 }
 
-function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
+// ⚡ Bolt Optimization: Memoize MarksheetTemplate with a custom comparator to
+// prevent severe performance degradation during bulk print rendering. This reduces
+// unnecessary re-renders by ensuring referential stability for complex props.
+const MarksheetTemplate = memo(function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, percentage, finalGrade, extra, coScholastic, photo, rank, activeClass, showTableWatermark }: any) {
   const getGrade = (m: number | string, max: number) => {
     if (m === '') return '';
     let p = (Number(m) / max) * 100;
@@ -1349,4 +1357,33 @@ function MarksheetTemplate({ theme, student, marks, subjectsList, grandTotal, pe
       </div>
     </div>
   )
+}, arePropsEqual);
+
+function arePropsEqual(prevProps: any, nextProps: any) {
+  if (prevProps.theme?.id !== nextProps.theme?.id) return false;
+  if (prevProps.student !== nextProps.student) return false;
+  if (prevProps.marks !== nextProps.marks) return false;
+  if (prevProps.grandTotal !== nextProps.grandTotal) return false;
+  if (prevProps.percentage !== nextProps.percentage) return false;
+  if (prevProps.finalGrade !== nextProps.finalGrade) return false;
+  if (prevProps.extra !== nextProps.extra) return false;
+
+  if (prevProps.coScholastic?.sports !== nextProps.coScholastic?.sports) return false;
+  if (prevProps.coScholastic?.art !== nextProps.coScholastic?.art) return false;
+  if (prevProps.coScholastic?.music !== nextProps.coScholastic?.music) return false;
+  if (prevProps.coScholastic?.discipline !== nextProps.coScholastic?.discipline) return false;
+
+  if (prevProps.photo !== nextProps.photo) return false;
+  if (prevProps.rank !== nextProps.rank) return false;
+  if (prevProps.activeClass !== nextProps.activeClass) return false;
+  if (prevProps.showTableWatermark !== nextProps.showTableWatermark) return false;
+
+  const prevSubs = prevProps.subjectsList || [];
+  const nextSubs = nextProps.subjectsList || [];
+  if (prevSubs.length !== nextSubs.length) return false;
+  for (let i = 0; i < prevSubs.length; i++) {
+    if (prevSubs[i] !== nextSubs[i]) return false;
+  }
+
+  return true;
 }
